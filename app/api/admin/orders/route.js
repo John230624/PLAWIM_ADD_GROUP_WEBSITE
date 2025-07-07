@@ -1,12 +1,12 @@
 // app/api/admin/orders/route.js
 
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db'; // chemin corrigé (3 ../ au lieu de 4)
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import pool from '@/lib/db';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/authOptions';
 
-export async function GET() {
-  const session = await getServerSession(authOptions);
+export async function GET(request) {
+  const session = await getServerSession(request, authOptions);
 
   if (!session || !session.user) {
     console.warn("Accès non authentifié à l'API /api/admin/orders.");

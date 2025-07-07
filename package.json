@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
+    "@netlify/next": "^1.4.9",
+    "@netlify/plugin-nextjs": "^5.11.4",
     "axios": "^1.10.0",
     "bcryptjs": "^3.0.2",
     "dotenv": "^16.5.0",
