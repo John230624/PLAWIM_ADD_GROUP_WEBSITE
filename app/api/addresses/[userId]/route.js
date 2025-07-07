@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 async function authorizeUser(req, context) {
     const session = await getServerSession(authOptions);
     // CORRECTION: await context.params pour éviter l'avertissement Next.js
-    const { userId: userIdFromParams } = await context.params; 
+    const { userId: userIdFromParams } = context.params;
 
     if (!session) {
         console.warn(`Tentative d'accès non authentifiée à /api/addresses/${userIdFromParams}`);
