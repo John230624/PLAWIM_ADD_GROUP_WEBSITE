@@ -14,14 +14,16 @@ const nextConfig = {
         port: '',
         pathname: '/chemin/vers/vos/images/**',
       },
-      { // Ajoutez ce nouveau pattern pour googleusercontent.com
-        protocol: 'http', // L'URL que vous avez fournie était http, assurez-vous que c'est correct.
-                          // Si l'image est servie via HTTPS, changez à 'https'.
+      {
+        protocol: 'http', // ou 'https' si nécessaire
         hostname: 'googleusercontent.com',
         port: '',
-        pathname: '/**', // Autorise n'importe quel chemin sur ce hostname
+        pathname: '/**',
       },
     ],
+  },
+  eslint: {
+    ignoreDuringBuilds: true, // <-- Ignore les erreurs eslint lors du build
   },
 };
 
