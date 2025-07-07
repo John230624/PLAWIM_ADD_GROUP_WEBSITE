@@ -1,7 +1,7 @@
 // app/api/admin/orders/route.js
 
 import { NextResponse } from 'next/server';
-import pool from '../../../lib/db'; // chemin corrigé (3 ../ au lieu de 4)
+import pool from '@/lib/db'; // chemin corrigé (3 ../ au lieu de 4)
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 
