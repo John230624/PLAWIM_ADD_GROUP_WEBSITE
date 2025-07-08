@@ -1,6 +1,7 @@
-// app/api/categories/route.js
+export const dynamic = 'force-dynamic';
+
 import { NextResponse } from 'next/server';
-import pool from '../../../lib/db'; // chemin corrigé
+import pool from '../../../lib/db'; // ou '@/lib/db' selon ta config
 
 export async function GET(req) {
   let connection;
