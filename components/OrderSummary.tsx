@@ -439,7 +439,7 @@ const OrderSummary = () => {
                         Préparation du paiement...
                     </>
                 ) : (
-                    "Procéder au Paiement avec Kakapay"
+                    "Procéder au Paiement"
                 )}
             </button>
 
