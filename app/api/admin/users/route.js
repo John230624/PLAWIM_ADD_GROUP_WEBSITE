@@ -1,11 +1,9 @@
 // C:\xampp\htdocs\01_PlawimAdd_Avec_Auth\app\api\admin\users\route.js
 
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
+import { getServerSession } from 'next-auth/next'; // Version correcte pour l'App Router
 import { authOptions } from '@/lib/authOptions';
 import prisma from '@/lib/prisma';
-// SUPPRIMER CES IMPORTS :
-// import { headers, cookies } from 'next/headers';
 
 /**
  * Fonction d'autorisation pour les administrateurs.
@@ -13,7 +11,7 @@ import prisma from '@/lib/prisma';
  * @returns {Promise<{authorized: boolean, response?: NextResponse}>}
  */
 async function authorizeAdmin() {
-  // CORRECTION ICI : Appelle getServerSession SANS le deuxième argument
+  // CORRECTION ICI : Appelle getServerSession SANS le deuxième argument (headers/cookies)
   const session = await getServerSession(authOptions);
 
   if (!session || !session.user) {
@@ -161,6 +159,7 @@ export async function DELETE(req) {
       return NextResponse.json({ success: false, message: 'Utilisateur non trouvé.' }, { status: 404 });
     }
     if (error.code === 'P2003') {
+      // P2003 = Foreign key constraint failed on the database
       return NextResponse.json({
         success: false,
         message: 'Impossible de supprimer l\'utilisateur car il est lié à des commandes ou d\'autres données. Veuillez supprimer les données liées d\'abord.',

@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth/next';
+import { getServerSession } from 'next-auth/next'; // Correct pour l'App Router
 import { authOptions } from '@/lib/authOptions';
 
 export async function GET(req) {
+  // Simplification : pas besoin de headers/cookies pour getServerSession dans les Route Handlers
   const session = await getServerSession(authOptions);
 
   if (!session || session.user.role?.toLowerCase() !== 'admin') {

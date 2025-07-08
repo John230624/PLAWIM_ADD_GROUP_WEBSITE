@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next'; // Correct pour l'App Router
 import { authOptions } from '@/lib/authOptions';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function GET(req) {
   try {
-    const session = await getServerSession(authOptions); // ✅ Compatible App Router
+    // Simplification : pas besoin de headers/cookies pour getServerSession dans les Route Handlers
+    const session = await getServerSession(authOptions);
 
     if (!session || !session.user || !session.user.id) {
       return NextResponse.json(

@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
-import prisma from '@/lib/prisma';
+import prisma from '@/lib/prisma'; // Assure-toi que ceci est correct
 
+// Fonction d'autorisation
 async function authorizeUser(userIdFromParams) {
-  const session = await getServerSession(authOptions);
+  const session = await getServerSession(authOptions); // Pas besoin de headers/cookies ici pour l'App Router
 
   if (!session) {
     console.warn(`Tentative d'accès non authentifiée à /api/addresses/${userIdFromParams}`);
@@ -14,6 +15,7 @@ async function authorizeUser(userIdFromParams) {
     };
   }
 
+  // Vérifie si l'ID de l'utilisateur dans la session correspond à l'ID dans les paramètres de l'URL
   if (String(session.user.id) !== String(userIdFromParams)) {
     console.warn(`Tentative d'accès non autorisé à /api/addresses/${userIdFromParams} par userId ${session.user.id}`);
     return {
@@ -25,11 +27,9 @@ async function authorizeUser(userIdFromParams) {
   return { authorized: true, userId: userIdFromParams, session };
 }
 
+// GET (Récupérer les adresses d'un utilisateur)
 export async function GET(req, context) {
-  // --- CORRECTION HERE ---
-  const params = await context.params;
-  const userId = params.userId;
-  // --- END CORRECTION ---
+  const { userId } = context.params; // Accès direct à userId via context.params
 
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
@@ -62,11 +62,9 @@ export async function GET(req, context) {
   }
 }
 
+// POST (Ajouter une nouvelle adresse pour un utilisateur)
 export async function POST(req, context) {
-  // --- CORRECTION HERE ---
-  const params = await context.params;
-  const userId = params.userId;
-  // --- END CORRECTION ---
+  const { userId } = context.params; // Accès direct à userId via context.params
 
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
@@ -83,6 +81,7 @@ export async function POST(req, context) {
   try {
     const newAddress = await prisma.$transaction(async (tx) => {
       if (isDefault) {
+        // S'il y a déjà une adresse par défaut, la rendre non par défaut
         await tx.address.updateMany({
           where: {
             userId: userId,
@@ -122,11 +121,9 @@ export async function POST(req, context) {
   }
 }
 
+// PUT (Mettre à jour une adresse existante)
 export async function PUT(req, context) {
-  // --- CORRECTION HERE ---
-  const params = await context.params;
-  const userId = params.userId;
-  // --- END CORRECTION ---
+  const { userId } = context.params; // Accès direct à userId via context.params
 
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
@@ -151,12 +148,13 @@ export async function PUT(req, context) {
   try {
     const updatedAddress = await prisma.$transaction(async (tx) => {
       if (isDefault) {
+        // Rendre toutes les autres adresses par défaut de cet utilisateur non par défaut
         await tx.address.updateMany({
           where: {
             userId: userId,
             isDefault: true,
             id: {
-              not: id,
+              not: id, // Ne pas modifier l'adresse en cours de mise à jour
             },
           },
           data: {
@@ -189,6 +187,7 @@ export async function PUT(req, context) {
     );
   } catch (error) {
     if (error.code === 'P2025') {
+      // P2025 est le code d'erreur Prisma pour "record not found" (enregistrement non trouvé)
       return NextResponse.json(
         { success: false, message: "Adresse non trouvée ou non autorisée." },
         { status: 404 }
@@ -202,11 +201,9 @@ export async function PUT(req, context) {
   }
 }
 
+// DELETE (Supprimer une adresse)
 export async function DELETE(req, context) {
-  // --- CORRECTION HERE ---
-  const params = await context.params;
-  const userId = params.userId;
-  // --- END CORRECTION ---
+  const { userId } = context.params; // Accès direct à userId via context.params
 
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
@@ -234,6 +231,7 @@ export async function DELETE(req, context) {
     );
   } catch (error) {
     if (error.code === 'P2025') {
+      // P2025 est le code d'erreur Prisma pour "record not found" (enregistrement non trouvé)
       return NextResponse.json(
         { success: false, message: "Adresse non trouvée ou non autorisée." },
         { status: 404 }

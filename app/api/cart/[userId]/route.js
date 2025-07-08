@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
+import { getServerSession } from 'next-auth/next'; // Correct pour l'App Router
 import { authOptions } from '@/lib/authOptions';
 import prisma from '@/lib/prisma';
 
 async function authorizeUser(userIdFromParams) {
+  // Simplification : pas besoin de headers/cookies pour getServerSession dans les Route Handlers
   const session = await getServerSession(authOptions);
 
   if (!session || !session.user || String(session.user.id) !== String(userIdFromParams)) {
@@ -14,11 +15,11 @@ async function authorizeUser(userIdFromParams) {
 }
 
 export async function GET(req, context) {
-  const params = await context.params;
-  const userId = params.userId;
+  // Accès direct à userId via context.params
+  const { userId } = context.params;
 
   const authResult = await authorizeUser(userId);
-  if (!authResult.authorized) return authResult.response;
+  if (!authResult.authorized) return authResult.response; // Utilise le response retourné par authorizeUser
 
   try {
     const cartItems = await prisma.cartItem.findMany({
@@ -44,6 +45,7 @@ export async function GET(req, context) {
           if (Array.isArray(parsed)) itemImgUrl = parsed;
           else if (typeof parsed === 'string') itemImgUrl = [parsed];
         } catch {
+          // Fallback si JSON.parse échoue, et si c'est une chaîne d'URL valide
           if (typeof item.product.imgUrl === 'string' && (item.product.imgUrl.startsWith('/') || item.product.imgUrl.startsWith('http'))) {
             itemImgUrl = [item.product.imgUrl];
           }
@@ -68,11 +70,11 @@ export async function GET(req, context) {
 }
 
 export async function POST(req, context) {
-  const params = await context.params;
-  const userId = params.userId;
+  // Accès direct à userId via context.params
+  const { userId } = context.params;
 
   const authResult = await authorizeUser(userId);
-  if (!authResult.authorized) return authResult.response;
+  if (!authResult.authorized) return authResult.response; // Utilise le response retourné par authorizeUser
 
   const { productId, quantity = 1 } = await req.json();
 
@@ -91,7 +93,7 @@ export async function POST(req, context) {
 
     const cartItem = await prisma.cartItem.upsert({
       where: {
-        user_product_unique: {   // <-- Correction ici : utiliser le nom exact de l'unique constraint
+        user_product_unique: { // Correction ici : utiliser le nom exact de l'unique constraint
           userId: userId,
           productId: productId,
         },
@@ -116,11 +118,11 @@ export async function POST(req, context) {
 }
 
 export async function PUT(req, context) {
-  const params = await context.params;
-  const userId = params.userId;
+  // Accès direct à userId via context.params
+  const { userId } = context.params;
 
   const authResult = await authorizeUser(userId);
-  if (!authResult.authorized) return authResult.response;
+  if (!authResult.authorized) return authResult.response; // Utilise le response retourné par authorizeUser
 
   const { productId, quantity } = await req.json();
 
@@ -153,6 +155,7 @@ export async function PUT(req, context) {
       });
 
       if (updatedItem.count === 0) {
+        // Si l'élément n'existait pas pour la mise à jour, le créer
         const newCartItem = await prisma.cartItem.create({
           data: {
             userId: userId,
@@ -171,11 +174,11 @@ export async function PUT(req, context) {
 }
 
 export async function DELETE(req, context) {
-  const params = await context.params;
-  const userId = params.userId;
+  // Accès direct à userId via context.params
+  const { userId } = context.params;
 
   const authResult = await authorizeUser(userId);
-  if (!authResult.authorized) return authResult.response;
+  if (!authResult.authorized) return authResult.response; // Utilise le response retourné par authorizeUser
 
   const { productId } = await req.json();
 

@@ -1,33 +1,31 @@
 // C:\xampp\htdocs\01_PlawimAdd_Avec_Auth\app\api\admin\orders\route.js
 
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
+import { getServerSession } from 'next-auth/next'; // Version correcte pour l'App Router
 import { authOptions } from '@/lib/authOptions';
 import prisma from '@/lib/prisma';
-// SUPPRIMER CES IMPORTS :
-// import { headers, cookies } from 'next/headers';
 
 /**
  * Authorization function to check if the user is authenticated and has the 'ADMIN' role.
  * @returns {Promise<{authorized: boolean, response?: NextResponse}>}
  */
 async function authorizeAdmin() {
-  // CORRECTION ICI : Appelle getServerSession SANS le deuxième argument
+  // Appel de getServerSession SANS le deuxième argument (headers/cookies) pour l'App Router
   const session = await getServerSession(authOptions);
 
   if (!session || !session.user) {
-    console.warn("Unauthorized access attempt to /api/admin/orders API.");
+    console.warn("Tentative d'accès non authentifiée à l'API /api/admin/orders.");
     return {
       authorized: false,
-      response: NextResponse.json({ message: 'Unauthorized.' }, { status: 401 }),
+      response: NextResponse.json({ message: 'Non authentifié.' }, { status: 401 }),
     };
   }
 
   if (session.user.role?.toLowerCase() !== 'admin') {
-    console.warn(`Forbidden access attempt to /api/admin/orders API by user ${session.user.id} (Role: ${session.user.role || 'None'})`);
+    console.warn(`Tentative d'accès interdit à l'API /api/admin/orders par l'utilisateur ${session.user.id} (Rôle: ${session.user.role || 'Aucun'})`);
     return {
       authorized: false,
-      response: NextResponse.json({ message: 'Access denied. Only administrators can view this page.' }, { status: 403 }),
+      response: NextResponse.json({ message: 'Accès refusé. Seuls les administrateurs peuvent consulter cette page.' }, { status: 403 }),
     };
   }
 
@@ -92,6 +90,7 @@ export async function GET(req) {
             if (Array.isArray(parsed)) itemImgUrl = parsed;
             else if (typeof parsed === 'string') itemImgUrl = [parsed];
           } catch {
+            // Fallback si JSON.parse échoue, et si c'est une chaîne d'URL valide
             if (typeof item.product.imgUrl === 'string' && (item.product.imgUrl.startsWith('/') || item.product.imgUrl.startsWith('http'))) {
               itemImgUrl = [item.product.imgUrl];
             }
@@ -130,9 +129,9 @@ export async function GET(req) {
 
     return NextResponse.json(formattedOrders, { status: 200 });
   } catch (error) {
-    console.error("CRITICAL Error in /api/admin/orders API (GET):", error);
+    console.error("Erreur CRITIQUE dans l'API /api/admin/orders (GET):", error);
     return NextResponse.json(
-      { message: "Server error retrieving orders.", error: error.message },
+      { message: "Erreur serveur lors de la récupération des commandes.", error: error.message },
       { status: 500 }
     );
   }

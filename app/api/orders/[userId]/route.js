@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth/next';
+import prisma from '@/lib/prisma'; // Assurez-vous que le chemin est correct
+import { getServerSession } from 'next-auth/next'; // Correct pour l'App Router
 import { authOptions } from '@/lib/authOptions';
 
 async function authorizeUser(userIdFromParams) {
   const session = await getServerSession(authOptions);
-  
+
   if (!session) {
     console.warn(`Tentative d'accès non authentifiée à /api/orders/${userIdFromParams}`);
     return {
@@ -26,10 +26,8 @@ async function authorizeUser(userIdFromParams) {
 }
 
 export async function GET(req, context) {
-  // --- CORRECTION HERE ---
-  const params = await context.params;
-  const userId = params.userId;
-  // --- END CORRECTION ---
+  // Accès direct à userId via context.params
+  const { userId } = context.params;
 
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
@@ -92,7 +90,7 @@ export async function GET(req, context) {
         id: order.id,
         totalAmount: order.totalAmount,
         orderStatus: order.status,
-        paymentStatus: order.paymentStatus,
+        // Supprimé paymentStatus car redondant avec payment.status
         shippingAddressLine1: order.shippingAddressLine1,
         shippingAddressLine2: order.shippingAddressLine2,
         shippingCity: order.shippingCity,
