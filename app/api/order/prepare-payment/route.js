@@ -5,7 +5,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { headers, cookies } from 'next/headers';
 
 export async function GET(req) {
-  const session = await getServerSession(authOptions, headers(), cookies());
+  const session = await getServerSession(authOptions, {
+    headers: headers(),
+    cookies: cookies(),
+  });
 
   if (!session?.user?.id) {
     return NextResponse.json({ success: false, message: "Non authentifié." }, { status: 401 });

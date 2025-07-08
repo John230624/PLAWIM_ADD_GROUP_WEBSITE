@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
-import { getServerSession } from 'next-auth/next';
+import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
 import { headers, cookies } from 'next/headers';
 
-export async function GET() {
-  const session = await getServerSession(authOptions, headers(), cookies());
+export async function GET(req) {
+  const session = await getServerSession(authOptions, {
+    headers: headers(),
+    cookies: cookies(),
+  });
 
   if (!session || !session.user) {
     console.warn("Accès non authentifié à l'API /api/admin/orders.");
@@ -79,7 +82,10 @@ export async function GET() {
     return NextResponse.json(ordersWithItems, { status: 200 });
   } catch (error) {
     console.error("Erreur CRITIQUE dans l'API /api/admin/orders:", error);
-    return NextResponse.json({ message: "Erreur serveur lors de la récupération des commandes.", error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { message: "Erreur serveur lors de la récupération des commandes.", error: error.message },
+      { status: 500 }
+    );
   } finally {
     if (connection) connection.release();
   }

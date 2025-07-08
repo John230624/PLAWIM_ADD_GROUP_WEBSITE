@@ -6,8 +6,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { headers, cookies } from 'next/headers';
 
 async function authorizeUser(context) {
-  // Passer headers() et cookies() à getServerSession (Next.js 15+)
-  const session = await getServerSession(authOptions, headers(), cookies());
+  const session = await getServerSession(authOptions, {
+    headers: headers(),
+    cookies: cookies(),
+  });
   const { userId: userIdFromParams } = context.params;
 
   if (!session) {
@@ -47,7 +49,10 @@ export async function GET(req, context) {
     return NextResponse.json(addresses, { status: 200 });
   } catch (error) {
     console.error("Erreur GET adresses:", error);
-    return NextResponse.json({ message: "Erreur serveur lors de la récupération des adresses.", error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { message: "Erreur serveur lors de la récupération des adresses.", error: error.message },
+      { status: 500 }
+    );
   } finally {
     if (connection) connection.release();
   }
@@ -61,7 +66,10 @@ export async function POST(req, context) {
   const { fullName, phoneNumber, pincode, area, city, state, isDefault = false } = await req.json();
 
   if (!fullName || !phoneNumber || !area || !city || !state) {
-    return NextResponse.json({ success: false, message: "Tous les champs d'adresse requis ne sont pas fournis." }, { status: 400 });
+    return NextResponse.json(
+      { success: false, message: "Tous les champs d'adresse requis ne sont pas fournis." },
+      { status: 400 }
+    );
   }
 
   let connection;
@@ -73,10 +81,16 @@ export async function POST(req, context) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [newAddressId, userId, fullName, phoneNumber, pincode, area, city, state, isDefault]
     );
-    return NextResponse.json({ success: true, message: "Adresse ajoutée avec succès.", id: newAddressId }, { status: 201 });
+    return NextResponse.json(
+      { success: true, message: "Adresse ajoutée avec succès.", id: newAddressId },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("Erreur POST adresse:", error);
-    return NextResponse.json({ success: false, message: `Erreur serveur lors de l'ajout de l'adresse: ${error.message}` }, { status: 500 });
+    return NextResponse.json(
+      { success: false, message: `Erreur serveur lors de l'ajout de l'adresse: ${error.message}` },
+      { status: 500 }
+    );
   } finally {
     if (connection) connection.release();
   }
@@ -89,8 +103,19 @@ export async function PUT(req, context) {
 
   const { id, fullName, phoneNumber, pincode, area, city, state, isDefault } = await req.json();
 
-  if (!id || fullName === undefined || phoneNumber === undefined || area === undefined || city === undefined || state === undefined || isDefault === undefined) {
-    return NextResponse.json({ success: false, message: "L'ID et tous les champs d'adresse sont requis pour la mise à jour." }, { status: 400 });
+  if (
+    !id ||
+    fullName === undefined ||
+    phoneNumber === undefined ||
+    area === undefined ||
+    city === undefined ||
+    state === undefined ||
+    isDefault === undefined
+  ) {
+    return NextResponse.json(
+      { success: false, message: "L'ID et tous les champs d'adresse sont requis pour la mise à jour." },
+      { status: 400 }
+    );
   }
 
   let connection;
@@ -113,15 +138,24 @@ export async function PUT(req, context) {
 
     if (result.affectedRows === 0) {
       await connection.rollback();
-      return NextResponse.json({ success: false, message: "Adresse non trouvée ou non autorisée." }, { status: 404 });
+      return NextResponse.json(
+        { success: false, message: "Adresse non trouvée ou non autorisée." },
+        { status: 404 }
+      );
     }
 
     await connection.commit();
-    return NextResponse.json({ success: true, message: "Adresse mise à jour avec succès." }, { status: 200 });
+    return NextResponse.json(
+      { success: true, message: "Adresse mise à jour avec succès." },
+      { status: 200 }
+    );
   } catch (error) {
     if (connection) await connection.rollback();
     console.error("Erreur PUT adresse:", error);
-    return NextResponse.json({ success: false, message: `Erreur serveur: ${error.message}` }, { status: 500 });
+    return NextResponse.json(
+      { success: false, message: `Erreur serveur: ${error.message}` },
+      { status: 500 }
+    );
   } finally {
     if (connection) connection.release();
   }
@@ -135,7 +169,10 @@ export async function DELETE(req, context) {
   const { id } = await req.json();
 
   if (!id) {
-    return NextResponse.json({ success: false, message: "L'ID de l'adresse est requis." }, { status: 400 });
+    return NextResponse.json(
+      { success: false, message: "L'ID de l'adresse est requis." },
+      { status: 400 }
+    );
   }
 
   let connection;
@@ -147,13 +184,22 @@ export async function DELETE(req, context) {
     );
 
     if (result.affectedRows === 0) {
-      return NextResponse.json({ success: false, message: "Adresse non trouvée ou non autorisée." }, { status: 404 });
+      return NextResponse.json(
+        { success: false, message: "Adresse non trouvée ou non autorisée." },
+        { status: 404 }
+      );
     }
 
-    return NextResponse.json({ success: true, message: "Adresse supprimée." }, { status: 200 });
+    return NextResponse.json(
+      { success: true, message: "Adresse supprimée." },
+      { status: 200 }
+    );
   } catch (error) {
     console.error("Erreur DELETE adresse:", error);
-    return NextResponse.json({ success: false, message: `Erreur serveur: ${error.message}` }, { status: 500 });
+    return NextResponse.json(
+      { success: false, message: `Erreur serveur: ${error.message}` },
+      { status: 500 }
+    );
   } finally {
     if (connection) connection.release();
   }

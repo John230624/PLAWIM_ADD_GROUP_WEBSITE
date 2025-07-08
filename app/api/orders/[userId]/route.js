@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
-import pool from '../../../../lib/db';
+import pool from '@/lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
 import { headers, cookies } from 'next/headers';
 
 async function authorizeUser(context) {
-  const session = await getServerSession(authOptions, headers(), cookies());
+  const session = await getServerSession(authOptions, {
+    headers: headers(),
+    cookies: cookies(),
+  });
   const { userId: userIdFromParams } = context.params;
 
   if (!session) {
@@ -42,8 +45,8 @@ export async function GET(req, context) {
           o.shippingAddressLine1, o.shippingAddressLine2, o.shippingCity, 
           o.shippingState, o.shippingZipCode, o.shippingCountry, o.orderDate,
           p.paymentMethod, p.status AS paymentStatusDetail, p.paymentDate, p.transactionId AS paymentTransactionId
-       FROM \`orders\` o
-       LEFT JOIN \`payments\` p ON o.id = p.orderId
+       FROM orders o
+       LEFT JOIN payments p ON o.id = p.orderId
        WHERE o.userId = ?
        ORDER BY o.orderDate DESC`,
       [userId]
@@ -52,7 +55,7 @@ export async function GET(req, context) {
     const ordersWithItems = await Promise.all(
       orders.map(async (order) => {
         const [items] = await connection.execute(
-          `SELECT productId, quantity, priceAtOrder, name, imgUrl FROM \`order_items\` WHERE orderId = ?`,
+          `SELECT productId, quantity, priceAtOrder, name, imgUrl FROM order_items WHERE orderId = ?`,
           [order.id]
         );
 
@@ -63,7 +66,7 @@ export async function GET(req, context) {
               const parsed = JSON.parse(item.imgUrl);
               if (Array.isArray(parsed)) itemImgUrl = parsed;
               else if (typeof parsed === 'string') itemImgUrl = [parsed];
-            } catch (e) {
+            } catch {
               if (typeof item.imgUrl === 'string' && item.imgUrl.startsWith('/')) {
                 itemImgUrl = [item.imgUrl];
               }

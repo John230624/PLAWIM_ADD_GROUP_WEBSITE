@@ -6,26 +6,21 @@ import { v4 as uuidv4 } from 'uuid';
 import { headers, cookies } from 'next/headers';
 
 async function authorizeUser(userIdFromParams) {
-  const session = await getServerSession(authOptions, headers(), cookies());
+  const session = await getServerSession(authOptions, {
+    headers: headers(),
+    cookies: cookies(),
+  });
+
   if (!session || !session.user || String(session.user.id) !== String(userIdFromParams)) {
     return { authorized: false };
   }
   return { authorized: true };
 }
 
-// Helper to parse userId from URL, assuming route like /api/cart/[userId]/route.js
-function getUserIdFromReq(req) {
-  // Ex: URL = http://localhost:3000/api/cart/123
-  const url = new URL(req.url);
-  const paths = url.pathname.split('/');
-  // last segment is userId
-  return paths[paths.length - 1];
-}
-
-export async function GET(req) {
-  const userId = getUserIdFromReq(req);
+export async function GET(req, context) {
+  const userId = context.params.userId;
   const authResult = await authorizeUser(userId);
-  if (!authResult.authorized) 
+  if (!authResult.authorized)
     return NextResponse.json({ message: 'Non autorisé.' }, { status: 403 });
 
   let connection;
@@ -44,10 +39,10 @@ export async function GET(req) {
   }
 }
 
-export async function POST(req) {
-  const userId = getUserIdFromReq(req);
+export async function POST(req, context) {
+  const userId = context.params.userId;
   const authResult = await authorizeUser(userId);
-  if (!authResult.authorized) 
+  if (!authResult.authorized)
     return NextResponse.json({ message: 'Non autorisé.' }, { status: 403 });
 
   const { productId, quantity = 1 } = await req.json();
@@ -96,10 +91,10 @@ export async function POST(req) {
   }
 }
 
-export async function PUT(req) {
-  const userId = getUserIdFromReq(req);
+export async function PUT(req, context) {
+  const userId = context.params.userId;
   const authResult = await authorizeUser(userId);
-  if (!authResult.authorized) 
+  if (!authResult.authorized)
     return NextResponse.json({ message: 'Non autorisé.' }, { status: 403 });
 
   const { productId, quantity } = await req.json();
@@ -144,10 +139,10 @@ export async function PUT(req) {
   }
 }
 
-export async function DELETE(req) {
-  const userId = getUserIdFromReq(req);
+export async function DELETE(req, context) {
+  const userId = context.params.userId;
   const authResult = await authorizeUser(userId);
-  if (!authResult.authorized) 
+  if (!authResult.authorized)
     return NextResponse.json({ message: 'Non autorisé.' }, { status: 403 });
 
   const { productId } = await req.json();

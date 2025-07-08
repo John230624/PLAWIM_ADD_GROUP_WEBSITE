@@ -1,18 +1,20 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
+import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
 import pool from '@/lib/db';
 import { headers, cookies } from 'next/headers';
 
-// Autorisation admin corrigée
 async function authorizeAdmin() {
-  const session = await getServerSession(authOptions, headers(), cookies());
+  const session = await getServerSession(authOptions, {
+    headers: headers(),
+    cookies: cookies(),
+  });
 
   if (!session || !session.user) {
     console.warn("Accès non authentifié à l'API admin/users.");
     return {
       authorized: false,
-      response: NextResponse.json({ message: 'Non authentifié.' }, { status: 401 })
+      response: NextResponse.json({ message: 'Non authentifié.' }, { status: 401 }),
     };
   }
 
@@ -21,8 +23,8 @@ async function authorizeAdmin() {
     return {
       authorized: false,
       response: NextResponse.json({
-        message: 'Accès interdit. Seuls les administrateurs peuvent gérer les utilisateurs.'
-      }, { status: 403 })
+        message: 'Accès interdit. Seuls les administrateurs peuvent gérer les utilisateurs.',
+      }, { status: 403 }),
     };
   }
 
@@ -60,7 +62,7 @@ export async function GET(req) {
     console.error("Erreur GET utilisateurs:", error);
     return NextResponse.json({
       message: "Erreur serveur lors de la récupération des utilisateurs.",
-      error: error.message
+      error: error.message,
     }, { status: 500 });
   } finally {
     if (connection) connection.release();
@@ -95,7 +97,7 @@ export async function PUT(req) {
       await connection.rollback();
       return NextResponse.json({
         success: false,
-        message: 'Utilisateur non trouvé ou rôle inchangé.'
+        message: 'Utilisateur non trouvé ou rôle inchangé.',
       }, { status: 404 });
     }
 
@@ -106,7 +108,7 @@ export async function PUT(req) {
     console.error("Erreur PUT utilisateur:", error);
     return NextResponse.json({
       success: false,
-      message: `Erreur serveur lors de la mise à jour de l'utilisateur: ${error.message}`
+      message: `Erreur serveur lors de la mise à jour de l'utilisateur: ${error.message}`,
     }, { status: 500 });
   } finally {
     if (connection) connection.release();
@@ -143,7 +145,7 @@ export async function DELETE(req) {
     if (error.code === 'ER_ROW_IS_REFERENCED_2') {
       return NextResponse.json({
         success: false,
-        message: 'Impossible de supprimer l\'utilisateur car il est lié à des commandes ou d\'autres données. Veuillez supprimer les données liées d\'abord.'
+        message: 'Impossible de supprimer l\'utilisateur car il est lié à des commandes ou d\'autres données. Veuillez supprimer les données liées d\'abord.',
       }, { status: 409 });
     }
 
