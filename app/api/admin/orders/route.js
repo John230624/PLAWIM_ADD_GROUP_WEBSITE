@@ -1,12 +1,17 @@
-// app/api/admin/orders/route.js
-
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
+import { headers, cookies } from 'next/headers';
 
-export async function GET(request) {
-  const session = await getServerSession(request, authOptions);
+export async function GET() {
+  const session = await getServerSession({
+    req: {
+      headers: Object.fromEntries(headers()),
+      cookies: Object.fromEntries(cookies().getAll().map(c => [c.name, c.value])),
+    },
+    ...authOptions
+  });
 
   if (!session || !session.user) {
     console.warn("Accès non authentifié à l'API /api/admin/orders.");
@@ -62,11 +67,8 @@ export async function GET(request) {
           if (item.imgUrl) {
             try {
               const parsed = JSON.parse(item.imgUrl);
-              if (Array.isArray(parsed)) {
-                itemImgUrl = parsed;
-              } else if (typeof parsed === 'string') {
-                itemImgUrl = [parsed];
-              }
+              if (Array.isArray(parsed)) itemImgUrl = parsed;
+              else if (typeof parsed === 'string') itemImgUrl = [parsed];
             } catch {
               if (typeof item.imgUrl === 'string' && (item.imgUrl.startsWith('/') || item.imgUrl.startsWith('http'))) {
                 itemImgUrl = [item.imgUrl];

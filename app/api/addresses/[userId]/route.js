@@ -1,27 +1,42 @@
-// ✅ app/api/addresses/[userId]/route.js — CORRIGÉ
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/authOptions';
+import { headers, cookies } from 'next/headers';
 import { v4 as uuidv4 } from 'uuid';
 
-async function authorizeUser(req, context) {
-  const session = await getServerSession(authOptions);
+async function authorizeUser(context) {
+  const session = await getServerSession({
+    req: {
+      headers: Object.fromEntries(headers()),
+      cookies: Object.fromEntries(cookies().getAll().map(c => [c.name, c.value])),
+    },
+    authOptions,
+  });
+
   const { userId: userIdFromParams } = context.params;
 
   if (!session) {
     console.warn(`Tentative d'accès non authentifiée à /api/addresses/${userIdFromParams}`);
-    return { authorized: false, response: NextResponse.json({ message: 'Non authentifié.' }, { status: 401 }) };
+    return {
+      authorized: false,
+      response: NextResponse.json({ message: 'Non authentifié.' }, { status: 401 }),
+    };
   }
+
   if (String(session.user.id) !== String(userIdFromParams)) {
     console.warn(`Tentative d'accès non autorisé à /api/addresses/${userIdFromParams} par userId ${session.user.id}`);
-    return { authorized: false, response: NextResponse.json({ message: 'Non autorisé.' }, { status: 403 }) };
+    return {
+      authorized: false,
+      response: NextResponse.json({ message: 'Non autorisé.' }, { status: 403 }),
+    };
   }
+
   return { authorized: true, userId: userIdFromParams };
 }
 
 export async function GET(req, context) {
-  const authResult = await authorizeUser(req, context);
+  const authResult = await authorizeUser(context);
   if (!authResult.authorized) return authResult.response;
   const userId = authResult.userId;
 
@@ -35,16 +50,20 @@ export async function GET(req, context) {
     return NextResponse.json(addresses, { status: 200 });
   } catch (error) {
     console.error("Erreur GET adresses:", error);
-    return NextResponse.json({ message: "Erreur serveur lors de la récupération des adresses.", error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { message: "Erreur serveur lors de la récupération des adresses.", error: error.message },
+      { status: 500 }
+    );
   } finally {
     if (connection) connection.release();
   }
 }
 
 export async function POST(req, context) {
-  const authResult = await authorizeUser(req, context);
+  const authResult = await authorizeUser(context);
   if (!authResult.authorized) return authResult.response;
   const userId = authResult.userId;
+
   const { fullName, phoneNumber, pincode, area, city, state, isDefault = false } = await req.json();
 
   if (!fullName || !phoneNumber || !area || !city || !state) {
@@ -69,7 +88,7 @@ export async function POST(req, context) {
 }
 
 export async function PUT(req, context) {
-  const authResult = await authorizeUser(req, context);
+  const authResult = await authorizeUser(context);
   if (!authResult.authorized) return authResult.response;
   const userId = authResult.userId;
 
@@ -112,7 +131,7 @@ export async function PUT(req, context) {
 }
 
 export async function DELETE(req, context) {
-  const authResult = await authorizeUser(req, context);
+  const authResult = await authorizeUser(context);
   if (!authResult.authorized) return authResult.response;
   const userId = authResult.userId;
   const { id } = await req.json();
@@ -141,5 +160,3 @@ export async function DELETE(req, context) {
     if (connection) connection.release();
   }
 }
-
-// ✅ app/api/admin/users/route.js — inchangé car déjà correct, compatible avec getServerSession(authOptions)
