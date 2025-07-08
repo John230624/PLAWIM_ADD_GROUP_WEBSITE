@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'export',  // active la génération statique
   images: {
     remotePatterns: [
       {
@@ -15,7 +16,7 @@ const nextConfig = {
         pathname: '/chemin/vers/vos/images/**',
       },
       {
-        protocol: 'http', // ou 'https' si nécessaire
+        protocol: 'http',
         hostname: 'googleusercontent.com',
         port: '',
         pathname: '/**',
@@ -23,7 +24,7 @@ const nextConfig = {
     ],
   },
   eslint: {
-    ignoreDuringBuilds: true, // <-- Ignore les erreurs eslint lors du build
+    ignoreDuringBuilds: true,
   },
 };
 

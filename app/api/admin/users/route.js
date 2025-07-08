@@ -1,28 +1,28 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
 import pool from '@/lib/db';
 import { headers, cookies } from 'next/headers';
 
+// Autorisation admin corrigée
 async function authorizeAdmin() {
-  const session = await getServerSession({
-    req: {
-      headers: Object.fromEntries(headers()),
-      cookies: Object.fromEntries(cookies().getAll().map(c => [c.name, c.value])),
-    },
-    ...authOptions
-  });
+  const session = await getServerSession(authOptions, headers(), cookies());
 
   if (!session || !session.user) {
     console.warn("Accès non authentifié à l'API admin/users.");
-    return { authorized: false, response: NextResponse.json({ message: 'Non authentifié.' }, { status: 401 }) };
+    return {
+      authorized: false,
+      response: NextResponse.json({ message: 'Non authentifié.' }, { status: 401 })
+    };
   }
 
   if (session.user.role?.toLowerCase() !== 'admin') {
-    console.warn(`Accès non autorisé à l'API admin/users par l'utilisateur ${session.user.id} (Rôle: ${session.user.role || 'Aucun'})`);
+    console.warn(`Accès non autorisé à l'API admin/users par utilisateur ${session.user.id} (Rôle: ${session.user.role || 'Aucun'})`);
     return {
       authorized: false,
-      response: NextResponse.json({ message: 'Accès interdit. Seuls les administrateurs peuvent gérer les utilisateurs.' }, { status: 403 }),
+      response: NextResponse.json({
+        message: 'Accès interdit. Seuls les administrateurs peuvent gérer les utilisateurs.'
+      }, { status: 403 })
     };
   }
 
@@ -58,7 +58,10 @@ export async function GET(req) {
     return NextResponse.json(formattedUsers, { status: 200 });
   } catch (error) {
     console.error("Erreur GET utilisateurs:", error);
-    return NextResponse.json({ message: "Erreur serveur lors de la récupération des utilisateurs.", error: error.message }, { status: 500 });
+    return NextResponse.json({
+      message: "Erreur serveur lors de la récupération des utilisateurs.",
+      error: error.message
+    }, { status: 500 });
   } finally {
     if (connection) connection.release();
   }
@@ -74,7 +77,7 @@ export async function PUT(req) {
     return NextResponse.json({ success: false, message: 'ID utilisateur et rôle sont requis.' }, { status: 400 });
   }
 
-  if (role.toLowerCase() !== 'admin' && role.toLowerCase() !== 'user') {
+  if (!['admin', 'user'].includes(role.toLowerCase())) {
     return NextResponse.json({ success: false, message: 'Rôle invalide. Doit être "admin" ou "user".' }, { status: 400 });
   }
 
@@ -90,7 +93,10 @@ export async function PUT(req) {
 
     if (result.affectedRows === 0) {
       await connection.rollback();
-      return NextResponse.json({ success: false, message: 'Utilisateur non trouvé ou rôle inchangé.' }, { status: 404 });
+      return NextResponse.json({
+        success: false,
+        message: 'Utilisateur non trouvé ou rôle inchangé.'
+      }, { status: 404 });
     }
 
     await connection.commit();
@@ -98,7 +104,10 @@ export async function PUT(req) {
   } catch (error) {
     if (connection) await connection.rollback();
     console.error("Erreur PUT utilisateur:", error);
-    return NextResponse.json({ success: false, message: `Erreur serveur lors de la mise à jour de l'utilisateur: ${error.message}` }, { status: 500 });
+    return NextResponse.json({
+      success: false,
+      message: `Erreur serveur lors de la mise à jour de l'utilisateur: ${error.message}`
+    }, { status: 500 });
   } finally {
     if (connection) connection.release();
   }
@@ -134,7 +143,7 @@ export async function DELETE(req) {
     if (error.code === 'ER_ROW_IS_REFERENCED_2') {
       return NextResponse.json({
         success: false,
-        message: 'Impossible de supprimer l\'utilisateur car il est lié à des commandes ou d\'autres données. Veuillez supprimer les données liées d\'abord.',
+        message: 'Impossible de supprimer l\'utilisateur car il est lié à des commandes ou d\'autres données. Veuillez supprimer les données liées d\'abord.'
       }, { status: 409 });
     }
 

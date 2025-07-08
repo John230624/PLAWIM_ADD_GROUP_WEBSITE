@@ -1,19 +1,13 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
-import { headers, cookies } from 'next/headers';
+import pool from '@/lib/db';
 import { v4 as uuidv4 } from 'uuid';
+import { headers, cookies } from 'next/headers';
 
 async function authorizeUser(context) {
-  const session = await getServerSession({
-    req: {
-      headers: Object.fromEntries(headers()),
-      cookies: Object.fromEntries(cookies().getAll().map(c => [c.name, c.value])),
-    },
-    authOptions,
-  });
-
+  // Passer headers() et cookies() à getServerSession (Next.js 15+)
+  const session = await getServerSession(authOptions, headers(), cookies());
   const { userId: userIdFromParams } = context.params;
 
   if (!session) {
@@ -44,16 +38,16 @@ export async function GET(req, context) {
   try {
     connection = await pool.getConnection();
     const [addresses] = await connection.execute(
-      `SELECT id, fullName, phoneNumber, pincode, area, city, state, isDefault FROM addresses WHERE userId = ? ORDER BY isDefault DESC, createdAt DESC`,
+      `SELECT id, fullName, phoneNumber, pincode, area, city, state, isDefault 
+       FROM addresses 
+       WHERE userId = ? 
+       ORDER BY isDefault DESC, createdAt DESC`,
       [userId]
     );
     return NextResponse.json(addresses, { status: 200 });
   } catch (error) {
     console.error("Erreur GET adresses:", error);
-    return NextResponse.json(
-      { message: "Erreur serveur lors de la récupération des adresses.", error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: "Erreur serveur lors de la récupération des adresses.", error: error.message }, { status: 500 });
   } finally {
     if (connection) connection.release();
   }
@@ -75,7 +69,8 @@ export async function POST(req, context) {
     connection = await pool.getConnection();
     const newAddressId = uuidv4();
     await connection.execute(
-      `INSERT INTO addresses (id, userId, fullName, phoneNumber, pincode, area, city, state, isDefault, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      `INSERT INTO addresses (id, userId, fullName, phoneNumber, pincode, area, city, state, isDefault, createdAt) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [newAddressId, userId, fullName, phoneNumber, pincode, area, city, state, isDefault]
     );
     return NextResponse.json({ success: true, message: "Adresse ajoutée avec succès.", id: newAddressId }, { status: 201 });
@@ -93,6 +88,7 @@ export async function PUT(req, context) {
   const userId = authResult.userId;
 
   const { id, fullName, phoneNumber, pincode, area, city, state, isDefault } = await req.json();
+
   if (!id || fullName === undefined || phoneNumber === undefined || area === undefined || city === undefined || state === undefined || isDefault === undefined) {
     return NextResponse.json({ success: false, message: "L'ID et tous les champs d'adresse sont requis pour la mise à jour." }, { status: 400 });
   }
@@ -110,7 +106,8 @@ export async function PUT(req, context) {
     }
 
     const [result] = await connection.execute(
-      `UPDATE addresses SET fullName = ?, phoneNumber = ?, pincode = ?, area = ?, city = ?, state = ?, isDefault = ?, updatedAt = NOW() WHERE id = ? AND userId = ?`,
+      `UPDATE addresses SET fullName = ?, phoneNumber = ?, pincode = ?, area = ?, city = ?, state = ?, isDefault = ?, updatedAt = NOW() 
+       WHERE id = ? AND userId = ?`,
       [fullName, phoneNumber, pincode, area, city, state, isDefault, id, userId]
     );
 
@@ -134,6 +131,7 @@ export async function DELETE(req, context) {
   const authResult = await authorizeUser(context);
   if (!authResult.authorized) return authResult.response;
   const userId = authResult.userId;
+
   const { id } = await req.json();
 
   if (!id) {

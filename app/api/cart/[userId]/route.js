@@ -1,39 +1,32 @@
 import { NextResponse } from 'next/server';
-import pool from '../../../../lib/db';
-import { getServerSession } from 'next-auth';
+import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
-
+import pool from '@/lib/db';
 import { v4 as uuidv4 } from 'uuid';
+import { headers, cookies } from 'next/headers';
 
-// Fonction utilitaire d'autorisation
-async function authorizeUser(req, context) {
-  // ATTENTION : ici context.params peut être une Promise, on await !
-  const { params } = await context;
-  const userIdFromParams = params.userId;
-
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return {
-      authorized: false,
-      response: NextResponse.json({ message: 'Non authentifié.' }, { status: 401 }),
-    };
+async function authorizeUser(userIdFromParams) {
+  const session = await getServerSession(authOptions, headers(), cookies());
+  if (!session || !session.user || String(session.user.id) !== String(userIdFromParams)) {
+    return { authorized: false };
   }
-
-  if (session.user.id !== userIdFromParams) {
-    return {
-      authorized: false,
-      response: NextResponse.json({ message: 'Non autorisé.' }, { status: 403 }),
-    };
-  }
-
-  return { authorized: true, userId: userIdFromParams };
+  return { authorized: true };
 }
 
-// GET: Récupérer les articles du panier d'un utilisateur
-export async function GET(req, context) {
-  const authResult = await authorizeUser(req, context);
-  if (!authResult.authorized) return authResult.response;
-  const userId = authResult.userId;
+// Helper to parse userId from URL, assuming route like /api/cart/[userId]/route.js
+function getUserIdFromReq(req) {
+  // Ex: URL = http://localhost:3000/api/cart/123
+  const url = new URL(req.url);
+  const paths = url.pathname.split('/');
+  // last segment is userId
+  return paths[paths.length - 1];
+}
+
+export async function GET(req) {
+  const userId = getUserIdFromReq(req);
+  const authResult = await authorizeUser(userId);
+  if (!authResult.authorized) 
+    return NextResponse.json({ message: 'Non autorisé.' }, { status: 403 });
 
   let connection;
   try {
@@ -51,11 +44,11 @@ export async function GET(req, context) {
   }
 }
 
-// POST: Ajouter un article au panier
-export async function POST(req, context) {
-  const authResult = await authorizeUser(req, context);
-  if (!authResult.authorized) return authResult.response;
-  const userId = authResult.userId;
+export async function POST(req) {
+  const userId = getUserIdFromReq(req);
+  const authResult = await authorizeUser(userId);
+  if (!authResult.authorized) 
+    return NextResponse.json({ message: 'Non autorisé.' }, { status: 403 });
 
   const { productId, quantity = 1 } = await req.json();
 
@@ -73,11 +66,11 @@ export async function POST(req, context) {
     );
 
     if (productExists.length === 0) {
-      return NextResponse.json({ success: false, message: "Le produit spécifié n'existe pas dans la base de données." }, { status: 404 });
+      return NextResponse.json({ success: false, message: "Le produit spécifié n'existe pas." }, { status: 404 });
     }
 
     const [existingItem] = await connection.execute(
-      `SELECT id, quantity FROM cart_items WHERE userId = ? AND productId = ?`,
+      `SELECT id FROM cart_items WHERE userId = ? AND productId = ?`,
       [userId, productId]
     );
 
@@ -97,25 +90,22 @@ export async function POST(req, context) {
     return NextResponse.json({ success: true, message: "Article ajouté au panier." }, { status: 200 });
   } catch (error) {
     console.error("Erreur POST panier:", error);
-    if (error.code === 'ER_DUP_ENTRY') {
-      return NextResponse.json({ success: false, message: "Le produit est déjà dans le panier (erreur de doublon)." }, { status: 409 });
-    }
-    return NextResponse.json({ success: false, message: `Erreur serveur lors de l'ajout au panier: ${error.message}` }, { status: 500 });
+    return NextResponse.json({ success: false, message: `Erreur serveur: ${error.message}` }, { status: 500 });
   } finally {
     if (connection) connection.release();
   }
 }
 
-// PUT: Mettre à jour la quantité
-export async function PUT(req, context) {
-  const authResult = await authorizeUser(req, context);
-  if (!authResult.authorized) return authResult.response;
-  const userId = authResult.userId;
+export async function PUT(req) {
+  const userId = getUserIdFromReq(req);
+  const authResult = await authorizeUser(userId);
+  if (!authResult.authorized) 
+    return NextResponse.json({ message: 'Non autorisé.' }, { status: 403 });
 
   const { productId, quantity } = await req.json();
 
   if (!productId || quantity === undefined || quantity < 0) {
-    return NextResponse.json({ success: false, message: "L'ID du produit et une quantité valide sont requis." }, { status: 400 });
+    return NextResponse.json({ success: false, message: "Produit ou quantité invalide." }, { status: 400 });
   }
 
   let connection;
@@ -128,7 +118,7 @@ export async function PUT(req, context) {
         [userId, productId]
       );
       if (result.affectedRows === 0) {
-        return NextResponse.json({ success: false, message: "Article non trouvé dans le panier pour suppression ou utilisateur non autorisé." }, { status: 404 });
+        return NextResponse.json({ success: false, message: "Article non trouvé dans le panier." }, { status: 404 });
       }
       return NextResponse.json({ success: true, message: "Article retiré du panier." }, { status: 200 });
     } else {
@@ -142,28 +132,28 @@ export async function PUT(req, context) {
           `INSERT INTO cart_items (id, userId, productId, quantity) VALUES (?, ?, ?, ?)`,
           [newCartItemId, userId, productId, quantity]
         );
-        return NextResponse.json({ success: true, message: "Article ajouté/mis à jour dans le panier (via PUT)." }, { status: 200 });
+        return NextResponse.json({ success: true, message: "Article ajouté dans le panier." }, { status: 200 });
       }
-      return NextResponse.json({ success: true, message: "Quantité du panier mise à jour." }, { status: 200 });
+      return NextResponse.json({ success: true, message: "Quantité mise à jour." }, { status: 200 });
     }
   } catch (error) {
     console.error("Erreur PUT panier:", error);
-    return NextResponse.json({ success: false, message: `Erreur serveur lors de la mise à jour du panier: ${error.message}` }, { status: 500 });
+    return NextResponse.json({ success: false, message: `Erreur serveur: ${error.message}` }, { status: 500 });
   } finally {
     if (connection) connection.release();
   }
 }
 
-// DELETE: Supprimer un article spécifique du panier
-export async function DELETE(req, context) {
-  const authResult = await authorizeUser(req, context);
-  if (!authResult.authorized) return authResult.response;
-  const userId = authResult.userId;
+export async function DELETE(req) {
+  const userId = getUserIdFromReq(req);
+  const authResult = await authorizeUser(userId);
+  if (!authResult.authorized) 
+    return NextResponse.json({ message: 'Non autorisé.' }, { status: 403 });
 
   const { productId } = await req.json();
 
   if (!productId) {
-    return NextResponse.json({ success: false, message: "L'ID du produit est requis pour la suppression." }, { status: 400 });
+    return NextResponse.json({ success: false, message: "Produit manquant pour suppression." }, { status: 400 });
   }
 
   let connection;
@@ -175,13 +165,13 @@ export async function DELETE(req, context) {
     );
 
     if (result.affectedRows === 0) {
-      return NextResponse.json({ success: false, message: "Article non trouvé dans le panier ou utilisateur non autorisé." }, { status: 404 });
+      return NextResponse.json({ success: false, message: "Article non trouvé dans le panier." }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, message: "Article retiré du panier." }, { status: 200 });
+    return NextResponse.json({ success: true, message: "Article supprimé." }, { status: 200 });
   } catch (error) {
     console.error("Erreur DELETE panier:", error);
-    return NextResponse.json({ success: false, message: `Erreur serveur lors de la suppression du panier: ${error.message}` }, { status: 500 });
+    return NextResponse.json({ success: false, message: `Erreur serveur: ${error.message}` }, { status: 500 });
   } finally {
     if (connection) connection.release();
   }
