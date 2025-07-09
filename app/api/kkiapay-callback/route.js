@@ -1,16 +1,16 @@
 // app/api/kkiapay-callback/route.js
 import { NextResponse } from 'next/server';
-import pool from '../../../lib/db';  // Chemin corrigé (3 ../ au lieu de 4)
+import prisma from '../../../lib/prisma'; // Assure-toi que le chemin est correct.
 import axios from 'axios';
-import { v4 as uuidv4 } from 'uuid';
+// La bibliothèque 'uuid' n'est plus nécessaire pour les IDs gérés par Prisma
 
 const KKIA_PRIVATE_API_KEY = process.env.KKIA_PRIVATE_API_KEY;
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const transactionId = searchParams.get('transactionId');
-  const statusFromKkiapay = searchParams.get('status');
-  const reference = searchParams.get('reference');
+  const statusFromKkiapay = searchParams.get('status'); // Peut être utile pour le log, mais la vérification API est primaire
+  const reference = searchParams.get('reference'); // Souvent l'orderId que tu as passé à Kkiapay
 
   console.log("Kkiapay Callback (GET) reçu:", { transactionId, statusFromKkiapay, reference });
 
@@ -28,16 +28,15 @@ export async function GET(request) {
     );
   }
 
-  let connection;
-  try {
-    connection = await pool.getConnection();
+  let kkiapayErrorMessage = '';
 
-    let kkiapayVerificationStatus = 'FAILED';
+  try {
+    let kkiapayVerificationStatus = 'FAILED'; // Par défaut
     let kkiapayTransactionAmount = 0;
     let kkiapayPaymentMethod = 'Inconnu';
-    let kkiapayErrorMessage = '';
     let kkiapayCustomerEmail = '';
     let kkiapayCustomerPhone = '';
+    let orderPayloadFromKkiapay = null;
 
     // Étape 1: Vérifier la transaction Kkiapay via leur API de vérification
     try {
@@ -61,7 +60,6 @@ export async function GET(request) {
         kkiapayCustomerEmail = verificationResponse.data.email || '';
         kkiapayCustomerPhone = verificationResponse.data.phone || '';
 
-        let orderPayloadFromKkiapay = null;
         if (verificationResponse.data.data) {
           try {
             orderPayloadFromKkiapay = JSON.parse(verificationResponse.data.data);
@@ -75,7 +73,9 @@ export async function GET(request) {
           !orderPayloadFromKkiapay ||
           !orderPayloadFromKkiapay.userId ||
           !orderPayloadFromKkiapay.items ||
-          !orderPayloadFromKkiapay.shippingAddress
+          !orderPayloadFromKkiapay.shippingAddress ||
+          orderPayloadFromKkiapay.totalAmount === undefined || // Assurez-vous que totalAmount est bien là
+          orderPayloadFromKkiapay.currency === undefined // Assurez-vous que currency est bien là
         ) {
           console.error("Données de commande complètes manquantes dans le payload Kkiapay 'data'. Impossible de créer la commande.");
           return NextResponse.redirect(
@@ -83,76 +83,95 @@ export async function GET(request) {
           );
         }
 
-        // Démarrer la transaction DB seulement si la vérification Kkiapay est un succès
-        await connection.beginTransaction();
+        // --- Démarrer la transaction DB avec Prisma ---
+        // Toutes les opérations DB sont enveloppées dans une transaction atomique
+        await prisma.$transaction(async (tx) => {
+          const orderId = reference || transactionId; // Utilise la référence si disponible, sinon l'ID de transaction
+          const userId = orderPayloadFromKkiapay.userId;
+          const totalAmount = orderPayloadFromKkiapay.totalAmount;
+          const shippingAddress = orderPayloadFromKkiapay.shippingAddress;
+          const items = orderPayloadFromKkiapay.items;
+          const currency = orderPayloadFromKkiapay.currency;
 
-        const orderId = transactionId;
-        const userId = orderPayloadFromKkiapay.userId;
-        const totalAmount = orderPayloadFromKkiapay.totalAmount;
-        const shippingAddress = orderPayloadFromKkiapay.shippingAddress;
-        const items = orderPayloadFromKkiapay.items;
-        const currency = orderPayloadFromKkiapay.currency;
+          // 2. Insérer la commande dans la table `orders`
+          // Utilise upsert pour éviter les doublons si le webhook est appelé plusieurs fois
+          const orderData = {
+            userId: userId,
+            totalAmount: totalAmount,
+            status: 'PAID_SUCCESS',
+            paymentStatus: 'COMPLETED',
+            shippingAddressLine1: shippingAddress.fullName || '',
+            shippingAddressLine2: shippingAddress.area || '', // Assurez-vous que c'est bien area pour Line2
+            shippingCity: shippingAddress.city || '',
+            shippingState: shippingAddress.state || '',
+            shippingZipCode: shippingAddress.pincode || '',
+            shippingCountry: shippingAddress.country || 'Bénin',
+            // orderDate est géré par @default(now()) dans le schéma
+          };
 
-        // 2. Insérer la commande dans la table `orders`
-        await connection.execute(
-          `INSERT INTO \`orders\` (
-            \`id\`, \`userId\`, \`totalAmount\`, \`status\`, \`paymentStatus\`,
-            \`shippingAddressLine1\`, \`shippingAddressLine2\`, \`shippingCity\`,
-            \`shippingState\`, \`shippingZipCode\`, \`shippingCountry\`, \`orderDate\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-          [
-            orderId,
-            userId,
-            totalAmount,
-            'PAID_SUCCESS',
-            'COMPLETED',
-            shippingAddress.fullName || '',
-            shippingAddress.area || '',
-            shippingAddress.city || '',
-            shippingAddress.state || '',
-            shippingAddress.pincode || '',
-            shippingAddress.country || 'Bénin',
-          ]
-        );
-        console.log(`Commande ${orderId} insérée avec statut PAID_SUCCESS pour userId ${userId}`);
+          await tx.order.upsert({
+            where: { id: orderId },
+            update: orderData, // Met à jour si la commande existe déjà (par ex. si elle était PENDING)
+            create: {
+              id: orderId, // Utilise l'ID de transaction/référence comme ID de commande
+              ...orderData,
+            },
+          });
+          console.log(`Commande ${orderId} insérée/mise à jour avec statut PAID_SUCCESS pour userId ${userId}`);
 
-        // 3. Insérer les articles de la commande dans `order_items`
-        for (const item of items) {
-          await connection.execute(
-            `INSERT INTO \`order_items\` (
-              \`id\`, \`orderId\`, \`productId\`, \`quantity\`, \`priceAtOrder\`, \`createdAt\`
-            ) VALUES (?, ?, ?, ?, ?, NOW())`,
-            [uuidv4(), orderId, item.productId, item.quantity, item.price]
-          );
-        }
-        console.log(`Articles insérés pour la commande ${orderId}`);
+          // 3. Insérer les articles de la commande dans `order_items`
+          // D'abord, supprimer les anciens articles de commande pour éviter les doublons si le webhook est ré-appelé
+          await tx.orderItem.deleteMany({
+            where: { orderId: orderId },
+          });
 
-        // 4. Insérer l'enregistrement de paiement final dans `payments`
-        const paymentId = uuidv4();
-        await connection.execute(
-          `INSERT INTO \`payments\` (
-            \`id\`, \`orderId\`, \`paymentMethod\`, \`transactionId\`, \`amount\`,
-            \`currency\`, \`status\`, \`paymentDate\`, \`createdAt\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-          [
-            paymentId,
-            orderId,
-            kkiapayPaymentMethod,
-            reference || transactionId,
-            kkiapayTransactionAmount,
-            currency,
-            'COMPLETED',
-          ]
-        );
-        console.log(`Paiement ${paymentId} inséré avec statut COMPLETED pour la commande ${orderId}`);
+          const orderItemsData = items.map(item => ({
+            orderId: orderId,
+            productId: item.productId,
+            quantity: item.quantity,
+            priceAtOrder: item.price,
+            name: item.name, // Assurez-vous que 'name' est passé dans le payload
+            imgUrl: item.imgUrl, // Assurez-vous que 'imgUrl' est passé dans le payload
+            // createdAt est géré par @default(now()) dans le schéma
+          }));
+          await tx.orderItem.createMany({
+            data: orderItemsData,
+            skipDuplicates: true, // Pour éviter des erreurs si un ID d'item est déjà là (moins probable avec UUID)
+          });
+          console.log(`Articles insérés pour la commande ${orderId}`);
 
-        // 5. Vider le panier de l'utilisateur après un paiement réussi
-        await connection.execute(`DELETE FROM \`cart_items\` WHERE \`userId\` = ?`, [userId]);
-        console.log(`Panier de l'utilisateur ${userId} vidé après paiement réussi.`);
+          // 4. Insérer/Mettre à jour l'enregistrement de paiement final dans `payments`
+          await tx.payment.upsert({
+            where: { orderId: orderId }, // orderId est unique dans le modèle Payment
+            update: {
+              paymentMethod: kkiapayPaymentMethod,
+              transactionId: transactionId, // L'ID de transaction Kkiapay
+              amount: kkiapayTransactionAmount,
+              currency: currency,
+              status: 'COMPLETED',
+              paymentDate: new Date(),
+            },
+            create: {
+              orderId: orderId,
+              paymentMethod: kkiapayPaymentMethod,
+              transactionId: transactionId,
+              amount: kkiapayTransactionAmount,
+              currency: currency,
+              status: 'COMPLETED',
+              paymentDate: new Date(),
+            },
+          });
+          console.log(`Paiement inséré/mis à jour avec statut COMPLETED pour la commande ${orderId}`);
 
-        await connection.commit();
+          // 5. Vider le panier de l'utilisateur après un paiement réussi
+          await tx.cartItem.deleteMany({
+            where: { userId: userId },
+          });
+          console.log(`Panier de l'utilisateur ${userId} vidé après paiement réussi.`);
+        }); // Fin de la transaction Prisma
 
         return NextResponse.redirect(`${request.nextUrl.origin}/order-status?orderId=${orderId}&status=success`);
+
       } else {
         kkiapayErrorMessage = verificationResponse.data.message || 'Échec de la vérification Kkiapay.';
         console.warn(`Vérification Kkiapay échouée pour transaction ${transactionId}: ${kkiapayErrorMessage}`);
@@ -168,20 +187,23 @@ export async function GET(request) {
       );
     }
   } catch (error) {
-    if (connection) {
-      await connection.rollback();
-      console.error("Transaction annulée dans kkiapay-callback en raison d'une erreur interne:", error);
-    }
-    console.error("Erreur serveur interne dans kkiapay-callback:", error);
+    // Les erreurs de la transaction Prisma seront capturées ici
+    console.error("Erreur serveur interne dans kkiapay-callback (hors Kkiapay API):", error);
     return NextResponse.redirect(
       `${request.nextUrl.origin}/order-status?status=error&message=${encodeURIComponent('Erreur interne du serveur lors du traitement du paiement.')}`
     );
-  } finally {
-    if (connection) connection.release();
   }
 }
 
 export async function POST(request) {
   console.log("Kkiapay Callback (POST) reçu. Traitement similaire à GET.");
-  return GET(request);
+  // Redirige la requête POST vers la fonction GET pour le traitement.
+  // C'est une approche si Kkiapay envoie des webhooks via GET et POST,
+  // mais il est plus courant que les webhooks soient POST.
+  // Assurez-vous que Kkiapay envoie des paramètres de requête dans le corps du POST
+  // si tu veux que GET(request) fonctionne avec req.json().
+  // Si Kkiapay envoie des paramètres dans le corps du POST, tu devras adapter la fonction GET
+  // pour lire req.json() au lieu de searchParams.
+  return GET(request); // Attention: Si Kkiapay envoie des données POST dans le body, GET ne les lira pas.
+                       // Il serait préférable de dupliquer la logique ou de créer une fonction utilitaire.
 }

@@ -53,7 +53,7 @@ const AddProduct = () => {
           }
 
           const data = await uploadRes.json();
-          return data.imageUrl;
+          return data.imageUrl; // /uploads/image-xxx.jpg
         })
       );
 
@@ -64,7 +64,7 @@ const AddProduct = () => {
         price: parseFloat(price),
         offerPrice: offerPrice ? parseFloat(offerPrice) : null,
         stock: parseInt(stock),
-        imgUrl: JSON.stringify(uploadedImageUrls),
+        imgUrl: uploadedImageUrls[0], // ✅ On utilise uniquement la première image
       };
 
       const res = await fetch('/api/products', {

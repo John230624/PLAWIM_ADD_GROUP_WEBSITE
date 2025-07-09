@@ -11,7 +11,7 @@ import { toast } from 'react-toastify';
 const ProductCard = ({ product }) => {
   const { addToCart, formatPriceInFCFA, cartItems } = useAppContext();
   const router = useRouter();
-  const toastShownRef = useRef(false); // Pour empêcher les toasts multiples
+  const toastShownRef = useRef(false); // Empêche les toasts multiples rapides
 
   if (!product) return null;
 
@@ -21,7 +21,6 @@ const ProductCard = ({ product }) => {
       : product.price;
 
   const imageUrl = product.imgUrl?.[0] || assets.default_product_image;
-
   const isInCart = Boolean(cartItems[product.id]);
 
   const handleAddToCart = (e) => {
@@ -59,7 +58,6 @@ const ProductCard = ({ product }) => {
       onClick={handleCardClick}
       className="group flex flex-col bg-zinc-100 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden h-full border border-zinc-200"
     >
-      {/* Image Container */}
       <div className="relative w-full aspect-square bg-zinc-50 overflow-hidden">
         <Image
           src={imageUrl}
@@ -69,8 +67,6 @@ const ProductCard = ({ product }) => {
           height={400}
           priority
         />
-
-        {/* Bouton Ajouter au panier */}
         <div className="absolute bottom-2 right-2 flex gap-2">
           <button
             onClick={handleAddToCart}
@@ -91,17 +87,13 @@ const ProductCard = ({ product }) => {
         </div>
       </div>
 
-      {/* Infos Produit */}
       <div className="p-2 flex flex-col flex-grow">
-        {/* Nom produit */}
         <h3 className="text-zinc-900 font-bold text-lg leading-tight line-clamp-2 mb-2">
           {product.name}
         </h3>
 
-        {/* Description */}
         <p className="text-zinc-500 text-xs line-clamp-3 mb-2">{product.description}</p>
 
-        {/* Note */}
         <div className="flex items-center gap-1 mb-0">
           <div className="flex items-center">
             {[...Array(5)].map((_, i) => (
@@ -115,19 +107,23 @@ const ProductCard = ({ product }) => {
               />
             ))}
           </div>
-          <span className="text-xs text-zinc-500 ml-1">{(product.rating || 4.5).toFixed(1)}</span>
+          <span className="text-xs text-zinc-500 ml-1">
+            {(product.rating || 4.5).toFixed(1)}
+          </span>
         </div>
 
-        {/* Prix et bouton Voir */}
         <div className="mt-auto flex items-end justify-between">
           <div>
-            <p className="text-lg font-bold text-blue-900 mt-auto">{formatPriceInFCFA(displayPrice)}</p>
+            <p className="text-lg font-bold text-blue-900 mt-auto">
+              {formatPriceInFCFA(displayPrice)}
+            </p>
             {product.offerPrice && product.offerPrice < product.price && (
-              <p className="text-xs text-zinc-400 line-through">{formatPriceInFCFA(product.price)}</p>
+              <p className="text-xs text-zinc-400 line-through">
+                {formatPriceInFCFA(product.price)}
+              </p>
             )}
           </div>
 
-          {/* Bouton Voir desktop */}
           <div className="hidden lg:flex">
             <button
               onClick={handleViewClick}
@@ -140,7 +136,6 @@ const ProductCard = ({ product }) => {
             </button>
           </div>
 
-          {/* Bouton Voir mobile */}
           <button
             onClick={handleViewClick}
             className="lg:hidden flex items-center text-blue-600 text-sm font-medium select-none"

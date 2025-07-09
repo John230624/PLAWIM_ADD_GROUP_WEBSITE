@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',  // active la génération statique
+  reactStrictMode: false, // désactive strict mode en dev
   images: {
     remotePatterns: [
       {
@@ -23,12 +23,6 @@ const nextConfig = {
       },
     ],
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  experimental: {
-    incrementalCacheHandlerPath: './cache-handler.js'
-  }
 };
 
 export default nextConfig;

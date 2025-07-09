@@ -1,16 +1,11 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
-import { headers, cookies } from 'next/headers';
 
-async function authorizeUser(context) {
-  const session = await getServerSession(authOptions, {
-    headers: headers(),
-    cookies: cookies(),
-  });
-  const { userId: userIdFromParams } = context.params;
-
+async function authorizeUser(userIdFromParams) {
+  const session = await getServerSession(authOptions);
+  
   if (!session) {
     console.warn(`Tentative d'accès non authentifiée à /api/orders/${userIdFromParams}`);
     return {
@@ -27,63 +22,95 @@ async function authorizeUser(context) {
     };
   }
 
-  return { authorized: true, userId: userIdFromParams };
+  return { authorized: true, userId: userIdFromParams, session };
 }
 
 export async function GET(req, context) {
-  const authResult = await authorizeUser(context);
+  // --- CORRECTION HERE ---
+  const params = await context.params;
+  const userId = params.userId;
+  // --- END CORRECTION ---
+
+  const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
-  const userId = authResult.userId;
 
-  let connection;
   try {
-    connection = await pool.getConnection();
+    const orders = await prisma.order.findMany({
+      where: {
+        userId: userId,
+      },
+      include: {
+        orderItems: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                imgUrl: true,
+              },
+            },
+          },
+        },
+        payment: {
+          select: {
+            paymentMethod: true,
+            status: true,
+            transactionId: true,
+            paymentDate: true,
+          },
+        },
+      },
+      orderBy: {
+        orderDate: 'desc',
+      },
+    });
 
-    const [orders] = await connection.execute(
-      `SELECT 
-          o.id, o.totalAmount, o.status AS orderStatus, o.paymentStatus, 
-          o.shippingAddressLine1, o.shippingAddressLine2, o.shippingCity, 
-          o.shippingState, o.shippingZipCode, o.shippingCountry, o.orderDate,
-          p.paymentMethod, p.status AS paymentStatusDetail, p.paymentDate, p.transactionId AS paymentTransactionId
-       FROM orders o
-       LEFT JOIN payments p ON o.id = p.orderId
-       WHERE o.userId = ?
-       ORDER BY o.orderDate DESC`,
-      [userId]
-    );
-
-    const ordersWithItems = await Promise.all(
-      orders.map(async (order) => {
-        const [items] = await connection.execute(
-          `SELECT productId, quantity, priceAtOrder, name, imgUrl FROM order_items WHERE orderId = ?`,
-          [order.id]
-        );
-
-        const parsedItems = items.map(item => {
-          let itemImgUrl = [];
-          if (item.imgUrl) {
-            try {
-              const parsed = JSON.parse(item.imgUrl);
-              if (Array.isArray(parsed)) itemImgUrl = parsed;
-              else if (typeof parsed === 'string') itemImgUrl = [parsed];
-            } catch {
-              if (typeof item.imgUrl === 'string' && item.imgUrl.startsWith('/')) {
-                itemImgUrl = [item.imgUrl];
-              }
+    const formattedOrders = orders.map(order => {
+      const parsedItems = order.orderItems.map(item => {
+        let itemImgUrl = [];
+        if (item.product?.imgUrl) {
+          try {
+            const parsed = JSON.parse(item.product.imgUrl);
+            if (Array.isArray(parsed)) itemImgUrl = parsed;
+            else if (typeof parsed === 'string') itemImgUrl = [parsed];
+          } catch {
+            if (typeof item.product.imgUrl === 'string' && (item.product.imgUrl.startsWith('/') || item.product.imgUrl.startsWith('http'))) {
+              itemImgUrl = [item.product.imgUrl];
             }
           }
-          return { ...item, imgUrl: itemImgUrl.length > 0 ? itemImgUrl[0] : '/placeholder-product.png' };
-        });
+        }
+        return {
+          productId: item.productId,
+          quantity: item.quantity,
+          priceAtOrder: item.priceAtOrder,
+          name: item.product?.name,
+          imgUrl: itemImgUrl.length > 0 ? itemImgUrl[0] : '/placeholder-product.png',
+        };
+      });
 
-        return { ...order, items: parsedItems };
-      })
-    );
+      return {
+        id: order.id,
+        totalAmount: order.totalAmount,
+        orderStatus: order.status,
+        paymentStatus: order.paymentStatus,
+        shippingAddressLine1: order.shippingAddressLine1,
+        shippingAddressLine2: order.shippingAddressLine2,
+        shippingCity: order.shippingCity,
+        shippingState: order.shippingState,
+        shippingZipCode: order.shippingZipCode,
+        shippingCountry: order.shippingCountry,
+        orderDate: order.orderDate,
+        paymentMethod: order.payment?.paymentMethod,
+        paymentStatusDetail: order.payment?.status,
+        paymentDate: order.payment?.paymentDate,
+        paymentTransactionId: order.payment?.transactionId,
+        items: parsedItems,
+      };
+    });
 
-    return NextResponse.json(ordersWithItems, { status: 200 });
+    return NextResponse.json(formattedOrders, { status: 200 });
   } catch (error) {
     console.error("Erreur GET commandes:", error);
     return NextResponse.json({ message: "Erreur serveur lors de la récupération des commandes.", error: error.message }, { status: 500 });
-  } finally {
-    if (connection) connection.release();
   }
 }

@@ -1,92 +1,139 @@
-import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/authOptions';
-import { headers, cookies } from 'next/headers';
+// C:\xampp\htdocs\01_PlawimAdd_Avec_Auth\app\api\admin\orders\route.js
 
-export async function GET(req) {
-  const session = await getServerSession(authOptions, {
-    headers: headers(),
-    cookies: cookies(),
-  });
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/authOptions';
+import prisma from '@/lib/prisma';
+// SUPPRIMER CES IMPORTS :
+// import { headers, cookies } from 'next/headers';
+
+/**
+ * Authorization function to check if the user is authenticated and has the 'ADMIN' role.
+ * @returns {Promise<{authorized: boolean, response?: NextResponse}>}
+ */
+async function authorizeAdmin() {
+  // CORRECTION ICI : Appelle getServerSession SANS le deuxième argument
+  const session = await getServerSession(authOptions);
 
   if (!session || !session.user) {
-    console.warn("Accès non authentifié à l'API /api/admin/orders.");
-    return NextResponse.json({ message: 'Non authentifié.' }, { status: 401 });
+    console.warn("Unauthorized access attempt to /api/admin/orders API.");
+    return {
+      authorized: false,
+      response: NextResponse.json({ message: 'Unauthorized.' }, { status: 401 }),
+    };
   }
 
   if (session.user.role?.toLowerCase() !== 'admin') {
-    console.warn(`Accès non autorisé à l'API /api/admin/orders par l'utilisateur ${session.user.id} (Rôle: ${session.user.role || 'Aucun'})`);
-    return NextResponse.json({ message: 'Accès interdit. Seuls les administrateurs peuvent voir cette page.' }, { status: 403 });
+    console.warn(`Forbidden access attempt to /api/admin/orders API by user ${session.user.id} (Role: ${session.user.role || 'None'})`);
+    return {
+      authorized: false,
+      response: NextResponse.json({ message: 'Access denied. Only administrators can view this page.' }, { status: 403 }),
+    };
   }
 
-  let connection;
+  return { authorized: true };
+}
+
+/**
+ * Handles the GET request to retrieve all orders (for administrators).
+ * Includes user information and order item details.
+ * @param {Request} req - The Next.js Request object.
+ * @returns {Promise<NextResponse>}
+ */
+export async function GET(req) {
+  const authResult = await authorizeAdmin();
+  if (!authResult.authorized) return authResult.response;
+
   try {
-    connection = await pool.getConnection();
+    const orders = await prisma.order.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            phoneNumber: true,
+          },
+        },
+        orderItems: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                imgUrl: true,
+              },
+            },
+          },
+        },
+        payment: {
+          select: {
+            paymentMethod: true,
+            status: true,
+            transactionId: true,
+            paymentDate: true,
+          },
+        },
+      },
+      orderBy: {
+        orderDate: 'desc',
+      },
+    });
 
-    const [orders] = await connection.execute(`
-      SELECT
-        o.id,
-        o.totalAmount,
-        o.status AS orderStatus,
-        o.shippingAddressLine1,
-        o.shippingAddressLine2,
-        o.shippingCity,
-        o.shippingState,
-        o.shippingZipCode,
-        o.shippingCountry,
-        o.orderDate,
-        CONCAT(u.firstName, ' ', u.lastName) AS userName,
-        u.email AS userEmail,
-        u.phoneNumber AS userPhoneNumber,
-        p.paymentMethod,
-        p.status AS paymentStatusDetail,
-        p.transactionId AS paymentTransactionId,
-        p.paymentDate
-      FROM orders o
-      JOIN users u ON o.userId = u.id
-      LEFT JOIN payments p ON o.id = p.orderId
-      ORDER BY o.orderDate DESC
-    `);
+    const formattedOrders = orders.map(order => {
+      const userFullName = `${order.user?.firstName || ''} ${order.user?.lastName || ''}`.trim();
 
-    const ordersWithItems = await Promise.all(
-      orders.map(async (order) => {
-        const [items] = await connection.execute(
-          `SELECT productId, quantity, priceAtOrder, name, imgUrl FROM order_items WHERE orderId = ?`,
-          [order.id]
-        );
-
-        const parsedItems = items.map((item) => {
-          let itemImgUrl = [];
-          if (item.imgUrl) {
-            try {
-              const parsed = JSON.parse(item.imgUrl);
-              if (Array.isArray(parsed)) itemImgUrl = parsed;
-              else if (typeof parsed === 'string') itemImgUrl = [parsed];
-            } catch {
-              if (typeof item.imgUrl === 'string' && (item.imgUrl.startsWith('/') || item.imgUrl.startsWith('http'))) {
-                itemImgUrl = [item.imgUrl];
-              }
+      const parsedItems = order.orderItems.map(item => {
+        let itemImgUrl = [];
+        if (item.product?.imgUrl) {
+          try {
+            const parsed = JSON.parse(item.product.imgUrl);
+            if (Array.isArray(parsed)) itemImgUrl = parsed;
+            else if (typeof parsed === 'string') itemImgUrl = [parsed];
+          } catch {
+            if (typeof item.product.imgUrl === 'string' && (item.product.imgUrl.startsWith('/') || item.product.imgUrl.startsWith('http'))) {
+              itemImgUrl = [item.product.imgUrl];
             }
           }
-          return {
-            ...item,
-            imgUrl: itemImgUrl.length > 0 ? itemImgUrl[0] : '/placeholder-product.png',
-          };
-        });
+        }
+        return {
+          productId: item.productId,
+          quantity: item.quantity,
+          priceAtOrder: item.priceAtOrder,
+          name: item.product?.name,
+          imgUrl: itemImgUrl.length > 0 ? itemImgUrl[0] : '/placeholder-product.png',
+        };
+      });
 
-        return { ...order, items: parsedItems };
-      })
-    );
+      return {
+        id: order.id,
+        totalAmount: order.totalAmount,
+        orderStatus: order.status,
+        shippingAddressLine1: order.shippingAddressLine1,
+        shippingAddressLine2: order.shippingAddressLine2,
+        shippingCity: order.shippingCity,
+        shippingState: order.shippingState,
+        shippingZipCode: order.shippingZipCode,
+        shippingCountry: order.shippingCountry,
+        orderDate: order.orderDate,
+        userName: userFullName,
+        userEmail: order.user?.email,
+        userPhoneNumber: order.user?.phoneNumber,
+        paymentMethod: order.payment?.paymentMethod,
+        paymentStatusDetail: order.payment?.status,
+        paymentTransactionId: order.payment?.transactionId,
+        paymentDate: order.payment?.paymentDate,
+        items: parsedItems,
+      };
+    });
 
-    return NextResponse.json(ordersWithItems, { status: 200 });
+    return NextResponse.json(formattedOrders, { status: 200 });
   } catch (error) {
-    console.error("Erreur CRITIQUE dans l'API /api/admin/orders:", error);
+    console.error("CRITICAL Error in /api/admin/orders API (GET):", error);
     return NextResponse.json(
-      { message: "Erreur serveur lors de la récupération des commandes.", error: error.message },
+      { message: "Server error retrieving orders.", error: error.message },
       { status: 500 }
     );
-  } finally {
-    if (connection) connection.release();
   }
 }

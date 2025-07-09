@@ -1,11 +1,10 @@
 // app/api/kakapay-webhook/route.js
 import { NextResponse } from 'next/server';
-// Importez votre module de base de données
-// import { db } from '@/lib/db';
+import prisma from '@/lib/prisma'; // Importe le client Prisma
 
 // La clé secrète de Kakapay, utilisée pour vérifier la signature des webhooks.
 // Doit être dans votre .env (NON NEXT_PUBLIC_)
-const KAKAPAY_WEBHOOK_SECRET = process.env.KAKAPAY_SECRET; 
+const KAKAPAY_WEBHOOK_SECRET = process.env.KAKAPAY_SECRET;
 
 export async function POST(req) {
     try {
@@ -15,7 +14,7 @@ export async function POST(req) {
         // *** TRÈS IMPORTANT : VÉRIFIER LA SIGNATURE DU WEBHOOK POUR LA SÉCURITÉ ***
         // C'est la première chose à faire pour s'assurer que le webhook vient bien de Kakapay.
         // La méthode de vérification dépend de Kakapay (souvent une fonction qui hache le corps
-        // de la requête avec la clé secrète et compare à la signature de l'en-tête).
+        // de la requête avec la clé secrète avec HMAC et compare à la signature de l'en-tête).
         /*
         if (!isValidKakapayWebhookSignature(event, signature, KAKAPAY_WEBHOOK_SECRET)) {
             console.warn('Signature de webhook Kakapay invalide. Requête rejetée.');
@@ -32,39 +31,105 @@ export async function POST(req) {
         const kakapayTransactionId = event.data.id;       // L'ID de transaction unique de Kakapay
         const orderReference = event.data.reference;    // La référence de commande que vous avez envoyée à Kakapay (orderId de votre DB)
         const paymentStatusFromKakapay = event.data.status; // Le statut de paiement envoyé par Kakapay (ex: 'SUCCESS', 'FAILED', 'PENDING')
+        const paymentAmount = event.data.amount; // Montant du paiement
+        const paymentCurrency = event.data.currency; // Devise du paiement
 
         let newOrderStatus;
+        let newPaymentStatus; // Ajout d'une variable pour le statut de paiement dans la table Payment
 
         if (paymentStatusFromKakapay === 'SUCCESS') { // Adaptez 'SUCCESS' si Kakapay utilise un autre libellé exact
             newOrderStatus = 'PAID_SUCCESS';
+            newPaymentStatus = 'COMPLETED';
             console.log(`Paiement réussi confirmé par webhook pour la commande: ${orderReference}`);
-            // TODO: Mettre à jour le statut de la commande dans votre DB
-            /*
-            await db.orders.update({
+
+            // Mise à jour du statut de la commande dans la DB
+            await prisma.order.update({
                 where: { id: orderReference }, // Trouver la commande par notre orderId
                 data: {
                     status: newOrderStatus,
-                    kakapayTransactionId: kakapayTransactionId // Enregistrer l'ID de transaction Kakapay
+                    kakapayTransactionId: kakapayTransactionId, // Enregistrer l'ID de transaction Kakapay
+                    paymentStatus: newPaymentStatus, // Mettre à jour le statut de paiement de la commande
+                    // Assurez-vous que ces champs existent dans votre modèle Order
                 }
             });
-            */
+
+            // Créer ou mettre à jour l'entrée dans la table 'payments'
+            // Assurez-vous que orderId est UNIQUE dans le modèle Payment pour une relation 1:1
+            await prisma.payment.upsert({
+                where: { orderId: orderReference },
+                update: {
+                    paymentMethod: 'Kakapay', // Ou le nom réel de la méthode de paiement si disponible
+                    transactionId: kakapayTransactionId,
+                    amount: paymentAmount,
+                    currency: paymentCurrency,
+                    status: newPaymentStatus,
+                    paymentDate: new Date(), // Date actuelle du paiement
+                },
+                create: {
+                    orderId: orderReference,
+                    paymentMethod: 'Kakapay',
+                    transactionId: kakapayTransactionId,
+                    amount: paymentAmount,
+                    currency: paymentCurrency,
+                    status: newPaymentStatus,
+                    paymentDate: new Date(),
+                }
+            });
+
         } else if (paymentStatusFromKakapay === 'FAILED' || paymentStatusFromKakapay === 'CANCELLED') {
             newOrderStatus = 'PAYMENT_FAILED';
+            newPaymentStatus = 'FAILED'; // Ou 'REFUNDED' si pertinent pour CANCELLED
             console.log(`Paiement échoué/annulé confirmé par webhook pour la commande: ${orderReference}`);
-            // TODO: Mettre à jour le statut de la commande dans votre DB
-            /*
-            await db.orders.update({
+
+            // Mise à jour du statut de la commande dans la DB
+            await prisma.order.update({
                 where: { id: orderReference },
                 data: {
                     status: newOrderStatus,
-                    kakapayTransactionId: kakapayTransactionId // Enregistrer l'ID de transaction Kakapay
+                    kakapayTransactionId: kakapayTransactionId, // Enregistrer l'ID de transaction Kakapay
+                    paymentStatus: newPaymentStatus,
                 }
             });
-            */
+
+            // Mettre à jour l'entrée dans la table 'payments' si elle existe
+            await prisma.payment.updateMany({ // updateMany car orderId est unique mais on n'utilise pas findUnique ici
+                where: { orderId: orderReference },
+                data: {
+                    transactionId: kakapayTransactionId,
+                    status: newPaymentStatus,
+                    paymentDate: new Date(),
+                }
+            });
+
+        } else if (paymentStatusFromKakapay === 'PENDING') {
+            newOrderStatus = 'PENDING';
+            newPaymentStatus = 'PENDING';
+            console.log(`Paiement en attente confirmé par webhook pour la commande: ${orderReference}`);
+
+            // Mise à jour du statut de la commande dans la DB
+            await prisma.order.update({
+                where: { id: orderReference },
+                data: {
+                    status: newOrderStatus,
+                    kakapayTransactionId: kakapayTransactionId,
+                    paymentStatus: newPaymentStatus,
+                }
+            });
+
+            // Mettre à jour l'entrée dans la table 'payments' si elle existe
+            await prisma.payment.updateMany({
+                where: { orderId: orderReference },
+                data: {
+                    transactionId: kakapayTransactionId,
+                    status: newPaymentStatus,
+                    paymentDate: new Date(),
+                }
+            });
+
         } else {
             console.log(`Statut de paiement intermédiaire ou inattendu (${paymentStatusFromKakapay}) pour la commande: ${orderReference}`);
             // Gérez les statuts intermédiaires si votre logique d'affaires l'exige.
-            // Pour l'instant, nous renvoyons OK mais sans action sur la DB.
+            // Pour l'instant, nous renvoyons OK mais sans action sur la DB si le statut n'est pas géré explicitement.
         }
 
         // Il est crucial de renvoyer un statut 200 OK à Kakapay pour indiquer que le webhook a été reçu et traité.

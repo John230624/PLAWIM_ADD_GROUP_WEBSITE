@@ -1,101 +1,126 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
-import pool from '@/lib/db';
-import { v4 as uuidv4 } from 'uuid';
-import { headers, cookies } from 'next/headers';
+import prisma from '@/lib/prisma';
 
 async function authorizeUser(userIdFromParams) {
-  const session = await getServerSession(authOptions, {
-    headers: headers(),
-    cookies: cookies(),
-  });
+  const session = await getServerSession(authOptions);
 
   if (!session || !session.user || String(session.user.id) !== String(userIdFromParams)) {
-    return { authorized: false };
+    console.warn(`Tentative d'accès non autorisé au panier de l'utilisateur ${userIdFromParams}.`);
+    return { authorized: false, response: NextResponse.json({ message: 'Non autorisé.' }, { status: 403 }) };
   }
-  return { authorized: true };
+  return { authorized: true, session };
 }
 
 export async function GET(req, context) {
-  const userId = context.params.userId;
-  const authResult = await authorizeUser(userId);
-  if (!authResult.authorized)
-    return NextResponse.json({ message: 'Non autorisé.' }, { status: 403 });
+  const params = await context.params;
+  const userId = params.userId;
 
-  let connection;
+  const authResult = await authorizeUser(userId);
+  if (!authResult.authorized) return authResult.response;
+
   try {
-    connection = await pool.getConnection();
-    const [cartItems] = await connection.execute(
-      `SELECT id, productId, quantity FROM cart_items WHERE userId = ?`,
-      [userId]
-    );
-    return NextResponse.json(cartItems, { status: 200 });
+    const cartItems = await prisma.cartItem.findMany({
+      where: { userId: userId },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            imgUrl: true,
+            stock: true,
+          },
+        },
+      },
+    });
+
+    const formattedCartItems = cartItems.map(item => {
+      let itemImgUrl = [];
+      if (item.product?.imgUrl) {
+        try {
+          const parsed = JSON.parse(item.product.imgUrl);
+          if (Array.isArray(parsed)) itemImgUrl = parsed;
+          else if (typeof parsed === 'string') itemImgUrl = [parsed];
+        } catch {
+          if (typeof item.product.imgUrl === 'string' && (item.product.imgUrl.startsWith('/') || item.product.imgUrl.startsWith('http'))) {
+            itemImgUrl = [item.product.imgUrl];
+          }
+        }
+      }
+      return {
+        id: item.id,
+        productId: item.productId,
+        quantity: item.quantity,
+        productName: item.product?.name,
+        productPrice: item.product?.price,
+        productImgUrl: itemImgUrl.length > 0 ? itemImgUrl[0] : '/placeholder-product.png',
+        productStock: item.product?.stock,
+      };
+    });
+
+    return NextResponse.json(formattedCartItems, { status: 200 });
   } catch (error) {
     console.error("Erreur GET panier:", error);
     return NextResponse.json({ message: "Erreur serveur lors de la récupération du panier.", error: error.message }, { status: 500 });
-  } finally {
-    if (connection) connection.release();
   }
 }
 
 export async function POST(req, context) {
-  const userId = context.params.userId;
+  const params = await context.params;
+  const userId = params.userId;
+
   const authResult = await authorizeUser(userId);
-  if (!authResult.authorized)
-    return NextResponse.json({ message: 'Non autorisé.' }, { status: 403 });
+  if (!authResult.authorized) return authResult.response;
 
   const { productId, quantity = 1 } = await req.json();
 
-  if (!productId) {
-    return NextResponse.json({ success: false, message: "L'ID du produit est requis." }, { status: 400 });
+  if (!productId || quantity < 1) {
+    return NextResponse.json({ success: false, message: "L'ID du produit et une quantité valide sont requis." }, { status: 400 });
   }
 
-  let connection;
   try {
-    connection = await pool.getConnection();
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+    });
 
-    const [productExists] = await connection.execute(
-      `SELECT id FROM products WHERE id = ?`,
-      [productId]
-    );
-
-    if (productExists.length === 0) {
+    if (!product) {
       return NextResponse.json({ success: false, message: "Le produit spécifié n'existe pas." }, { status: 404 });
     }
 
-    const [existingItem] = await connection.execute(
-      `SELECT id FROM cart_items WHERE userId = ? AND productId = ?`,
-      [userId, productId]
-    );
+    const cartItem = await prisma.cartItem.upsert({
+      where: {
+        user_product_unique: {   // <-- Correction ici : utiliser le nom exact de l'unique constraint
+          userId: userId,
+          productId: productId,
+        },
+      },
+      update: {
+        quantity: {
+          increment: quantity,
+        },
+      },
+      create: {
+        userId: userId,
+        productId: productId,
+        quantity: quantity,
+      },
+    });
 
-    if (existingItem.length > 0) {
-      await connection.execute(
-        `UPDATE cart_items SET quantity = quantity + ? WHERE userId = ? AND productId = ?`,
-        [quantity, userId, productId]
-      );
-    } else {
-      const newCartItemId = uuidv4();
-      await connection.execute(
-        `INSERT INTO cart_items (id, userId, productId, quantity) VALUES (?, ?, ?, ?)`,
-        [newCartItemId, userId, productId, quantity]
-      );
-    }
-
-    return NextResponse.json({ success: true, message: "Article ajouté au panier." }, { status: 200 });
+    return NextResponse.json({ success: true, message: "Article ajouté au panier.", cartItem }, { status: 200 });
   } catch (error) {
     console.error("Erreur POST panier:", error);
     return NextResponse.json({ success: false, message: `Erreur serveur: ${error.message}` }, { status: 500 });
-  } finally {
-    if (connection) connection.release();
   }
 }
 
 export async function PUT(req, context) {
-  const userId = context.params.userId;
+  const params = await context.params;
+  const userId = params.userId;
+
   const authResult = await authorizeUser(userId);
-  if (!authResult.authorized)
-    return NextResponse.json({ message: 'Non autorisé.' }, { status: 403 });
+  if (!authResult.authorized) return authResult.response;
 
   const { productId, quantity } = await req.json();
 
@@ -103,47 +128,54 @@ export async function PUT(req, context) {
     return NextResponse.json({ success: false, message: "Produit ou quantité invalide." }, { status: 400 });
   }
 
-  let connection;
   try {
-    connection = await pool.getConnection();
-
     if (quantity <= 0) {
-      const [result] = await connection.execute(
-        `DELETE FROM cart_items WHERE userId = ? AND productId = ?`,
-        [userId, productId]
-      );
-      if (result.affectedRows === 0) {
+      const deletedItem = await prisma.cartItem.deleteMany({
+        where: {
+          userId: userId,
+          productId: productId,
+        },
+      });
+
+      if (deletedItem.count === 0) {
         return NextResponse.json({ success: false, message: "Article non trouvé dans le panier." }, { status: 404 });
       }
       return NextResponse.json({ success: true, message: "Article retiré du panier." }, { status: 200 });
     } else {
-      const [result] = await connection.execute(
-        `UPDATE cart_items SET quantity = ? WHERE userId = ? AND productId = ?`,
-        [quantity, userId, productId]
-      );
-      if (result.affectedRows === 0) {
-        const newCartItemId = uuidv4();
-        await connection.execute(
-          `INSERT INTO cart_items (id, userId, productId, quantity) VALUES (?, ?, ?, ?)`,
-          [newCartItemId, userId, productId, quantity]
-        );
-        return NextResponse.json({ success: true, message: "Article ajouté dans le panier." }, { status: 200 });
+      const updatedItem = await prisma.cartItem.updateMany({
+        where: {
+          userId: userId,
+          productId: productId,
+        },
+        data: {
+          quantity: quantity,
+        },
+      });
+
+      if (updatedItem.count === 0) {
+        const newCartItem = await prisma.cartItem.create({
+          data: {
+            userId: userId,
+            productId: productId,
+            quantity: quantity,
+          },
+        });
+        return NextResponse.json({ success: true, message: "Article ajouté dans le panier.", cartItem: newCartItem }, { status: 200 });
       }
       return NextResponse.json({ success: true, message: "Quantité mise à jour." }, { status: 200 });
     }
   } catch (error) {
     console.error("Erreur PUT panier:", error);
     return NextResponse.json({ success: false, message: `Erreur serveur: ${error.message}` }, { status: 500 });
-  } finally {
-    if (connection) connection.release();
   }
 }
 
 export async function DELETE(req, context) {
-  const userId = context.params.userId;
+  const params = await context.params;
+  const userId = params.userId;
+
   const authResult = await authorizeUser(userId);
-  if (!authResult.authorized)
-    return NextResponse.json({ message: 'Non autorisé.' }, { status: 403 });
+  if (!authResult.authorized) return authResult.response;
 
   const { productId } = await req.json();
 
@@ -151,15 +183,15 @@ export async function DELETE(req, context) {
     return NextResponse.json({ success: false, message: "Produit manquant pour suppression." }, { status: 400 });
   }
 
-  let connection;
   try {
-    connection = await pool.getConnection();
-    const [result] = await connection.execute(
-      `DELETE FROM cart_items WHERE userId = ? AND productId = ?`,
-      [userId, productId]
-    );
+    const deletedItem = await prisma.cartItem.deleteMany({
+      where: {
+        userId: userId,
+        productId: productId,
+      },
+    });
 
-    if (result.affectedRows === 0) {
+    if (deletedItem.count === 0) {
       return NextResponse.json({ success: false, message: "Article non trouvé dans le panier." }, { status: 404 });
     }
 
@@ -167,7 +199,5 @@ export async function DELETE(req, context) {
   } catch (error) {
     console.error("Erreur DELETE panier:", error);
     return NextResponse.json({ success: false, message: `Erreur serveur: ${error.message}` }, { status: 500 });
-  } finally {
-    if (connection) connection.release();
   }
 }

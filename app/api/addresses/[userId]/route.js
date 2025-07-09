@@ -1,16 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
-import pool from '@/lib/db';
-import { v4 as uuidv4 } from 'uuid';
-import { headers, cookies } from 'next/headers';
+import prisma from '@/lib/prisma';
 
-async function authorizeUser(context) {
-  const session = await getServerSession(authOptions, {
-    headers: headers(),
-    cookies: cookies(),
-  });
-  const { userId: userIdFromParams } = context.params;
+async function authorizeUser(userIdFromParams) {
+  const session = await getServerSession(authOptions);
 
   if (!session) {
     console.warn(`Tentative d'accès non authentifiée à /api/addresses/${userIdFromParams}`);
@@ -28,24 +22,36 @@ async function authorizeUser(context) {
     };
   }
 
-  return { authorized: true, userId: userIdFromParams };
+  return { authorized: true, userId: userIdFromParams, session };
 }
 
 export async function GET(req, context) {
-  const authResult = await authorizeUser(context);
-  if (!authResult.authorized) return authResult.response;
-  const userId = authResult.userId;
+  // --- CORRECTION HERE ---
+  const params = await context.params;
+  const userId = params.userId;
+  // --- END CORRECTION ---
 
-  let connection;
+  const authResult = await authorizeUser(userId);
+  if (!authResult.authorized) return authResult.response;
+
   try {
-    connection = await pool.getConnection();
-    const [addresses] = await connection.execute(
-      `SELECT id, fullName, phoneNumber, pincode, area, city, state, isDefault 
-       FROM addresses 
-       WHERE userId = ? 
-       ORDER BY isDefault DESC, createdAt DESC`,
-      [userId]
-    );
+    const addresses = await prisma.address.findMany({
+      where: { userId: userId },
+      orderBy: [
+        { isDefault: 'desc' },
+        { createdAt: 'desc' },
+      ],
+      select: {
+        id: true,
+        fullName: true,
+        phoneNumber: true,
+        pincode: true,
+        area: true,
+        city: true,
+        state: true,
+        isDefault: true,
+      },
+    });
     return NextResponse.json(addresses, { status: 200 });
   } catch (error) {
     console.error("Erreur GET adresses:", error);
@@ -53,15 +59,17 @@ export async function GET(req, context) {
       { message: "Erreur serveur lors de la récupération des adresses.", error: error.message },
       { status: 500 }
     );
-  } finally {
-    if (connection) connection.release();
   }
 }
 
 export async function POST(req, context) {
-  const authResult = await authorizeUser(context);
+  // --- CORRECTION HERE ---
+  const params = await context.params;
+  const userId = params.userId;
+  // --- END CORRECTION ---
+
+  const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
-  const userId = authResult.userId;
 
   const { fullName, phoneNumber, pincode, area, city, state, isDefault = false } = await req.json();
 
@@ -72,17 +80,37 @@ export async function POST(req, context) {
     );
   }
 
-  let connection;
   try {
-    connection = await pool.getConnection();
-    const newAddressId = uuidv4();
-    await connection.execute(
-      `INSERT INTO addresses (id, userId, fullName, phoneNumber, pincode, area, city, state, isDefault, createdAt) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-      [newAddressId, userId, fullName, phoneNumber, pincode, area, city, state, isDefault]
-    );
+    const newAddress = await prisma.$transaction(async (tx) => {
+      if (isDefault) {
+        await tx.address.updateMany({
+          where: {
+            userId: userId,
+            isDefault: true,
+          },
+          data: {
+            isDefault: false,
+          },
+        });
+      }
+
+      const createdAddress = await tx.address.create({
+        data: {
+          userId: userId,
+          fullName: fullName,
+          phoneNumber: phoneNumber,
+          pincode: pincode,
+          area: area,
+          city: city,
+          state: state,
+          isDefault: isDefault,
+        },
+      });
+      return createdAddress;
+    });
+
     return NextResponse.json(
-      { success: true, message: "Adresse ajoutée avec succès.", id: newAddressId },
+      { success: true, message: "Adresse ajoutée avec succès.", id: newAddress.id },
       { status: 201 }
     );
   } catch (error) {
@@ -91,15 +119,17 @@ export async function POST(req, context) {
       { success: false, message: `Erreur serveur lors de l'ajout de l'adresse: ${error.message}` },
       { status: 500 }
     );
-  } finally {
-    if (connection) connection.release();
   }
 }
 
 export async function PUT(req, context) {
-  const authResult = await authorizeUser(context);
+  // --- CORRECTION HERE ---
+  const params = await context.params;
+  const userId = params.userId;
+  // --- END CORRECTION ---
+
+  const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
-  const userId = authResult.userId;
 
   const { id, fullName, phoneNumber, pincode, area, city, state, isDefault } = await req.json();
 
@@ -118,53 +148,68 @@ export async function PUT(req, context) {
     );
   }
 
-  let connection;
   try {
-    connection = await pool.getConnection();
-    await connection.beginTransaction();
+    const updatedAddress = await prisma.$transaction(async (tx) => {
+      if (isDefault) {
+        await tx.address.updateMany({
+          where: {
+            userId: userId,
+            isDefault: true,
+            id: {
+              not: id,
+            },
+          },
+          data: {
+            isDefault: false,
+          },
+        });
+      }
 
-    if (isDefault) {
-      await connection.execute(
-        `UPDATE addresses SET isDefault = 0 WHERE userId = ? AND id != ?`,
-        [userId, id]
-      );
-    }
+      const result = await tx.address.update({
+        where: {
+          id: id,
+          userId: userId,
+        },
+        data: {
+          fullName: fullName,
+          phoneNumber: phoneNumber,
+          pincode: pincode,
+          area: area,
+          city: city,
+          state: state,
+          isDefault: isDefault,
+        },
+      });
+      return result;
+    });
 
-    const [result] = await connection.execute(
-      `UPDATE addresses SET fullName = ?, phoneNumber = ?, pincode = ?, area = ?, city = ?, state = ?, isDefault = ?, updatedAt = NOW() 
-       WHERE id = ? AND userId = ?`,
-      [fullName, phoneNumber, pincode, area, city, state, isDefault, id, userId]
-    );
-
-    if (result.affectedRows === 0) {
-      await connection.rollback();
-      return NextResponse.json(
-        { success: false, message: "Adresse non trouvée ou non autorisée." },
-        { status: 404 }
-      );
-    }
-
-    await connection.commit();
     return NextResponse.json(
       { success: true, message: "Adresse mise à jour avec succès." },
       { status: 200 }
     );
   } catch (error) {
-    if (connection) await connection.rollback();
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { success: false, message: "Adresse non trouvée ou non autorisée." },
+        { status: 404 }
+      );
+    }
     console.error("Erreur PUT adresse:", error);
     return NextResponse.json(
       { success: false, message: `Erreur serveur: ${error.message}` },
       { status: 500 }
     );
-  } finally {
-    if (connection) connection.release();
   }
 }
 
 export async function DELETE(req, context) {
-  const authResult = await authorizeUser(context);
+  // --- CORRECTION HERE ---
+  const params = await context.params;
+  const userId = params.userId;
+  // --- END CORRECTION ---
+
+  const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
-  const userId = authResult.userId;
 
   const { id } = await req.json();
 
@@ -175,32 +220,29 @@ export async function DELETE(req, context) {
     );
   }
 
-  let connection;
   try {
-    connection = await pool.getConnection();
-    const [result] = await connection.execute(
-      `DELETE FROM addresses WHERE id = ? AND userId = ?`,
-      [id, userId]
-    );
-
-    if (result.affectedRows === 0) {
-      return NextResponse.json(
-        { success: false, message: "Adresse non trouvée ou non autorisée." },
-        { status: 404 }
-      );
-    }
+    const deletedAddress = await prisma.address.delete({
+      where: {
+        id: id,
+        userId: userId,
+      },
+    });
 
     return NextResponse.json(
       { success: true, message: "Adresse supprimée." },
       { status: 200 }
     );
   } catch (error) {
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { success: false, message: "Adresse non trouvée ou non autorisée." },
+        { status: 404 }
+      );
+    }
     console.error("Erreur DELETE adresse:", error);
     return NextResponse.json(
       { success: false, message: `Erreur serveur: ${error.message}` },
       { status: 500 }
     );
-  } finally {
-    if (connection) connection.release();
   }
 }

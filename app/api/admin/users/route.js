@@ -1,14 +1,20 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/authOptions';
-import pool from '@/lib/db';
-import { headers, cookies } from 'next/headers';
+// C:\xampp\htdocs\01_PlawimAdd_Avec_Auth\app\api\admin\users\route.js
 
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/authOptions';
+import prisma from '@/lib/prisma';
+// SUPPRIMER CES IMPORTS :
+// import { headers, cookies } from 'next/headers';
+
+/**
+ * Fonction d'autorisation pour les administrateurs.
+ * Vérifie si l'utilisateur est authentifié et a le rôle 'ADMIN'.
+ * @returns {Promise<{authorized: boolean, response?: NextResponse}>}
+ */
 async function authorizeAdmin() {
-  const session = await getServerSession(authOptions, {
-    headers: headers(),
-    cookies: cookies(),
-  });
+  // CORRECTION ICI : Appelle getServerSession SANS le deuxième argument
+  const session = await getServerSession(authOptions);
 
   if (!session || !session.user) {
     console.warn("Accès non authentifié à l'API admin/users.");
@@ -31,28 +37,43 @@ async function authorizeAdmin() {
   return { authorized: true };
 }
 
+/**
+ * Gère la requête GET pour récupérer la liste des utilisateurs (pour les administrateurs).
+ * Permet de filtrer par rôle 'user'.
+ * @param {Request} req - L'objet Request de Next.js.
+ * @returns {Promise<NextResponse>}
+ */
 export async function GET(req) {
   const authResult = await authorizeAdmin();
   if (!authResult.authorized) return authResult.response;
 
-  let connection;
   try {
-    connection = await pool.getConnection();
     const { searchParams } = new URL(req.url);
     const roleFilter = searchParams.get('role');
 
-    let query = 'SELECT id, firstName, lastName, email, phoneNumber, role, createdAt, updatedAt FROM users';
-    const queryParams = [];
-
+    const whereClause = {};
     if (roleFilter && roleFilter.toLowerCase() === 'user') {
-      query += ' WHERE role = ?';
-      queryParams.push('USER');
+      whereClause.role = 'USER'; // Utilise la valeur de l'enum définie dans Prisma
     }
-    query += ' ORDER BY createdAt DESC';
 
-    const [rows] = await connection.execute(query, queryParams);
+    const users = await prisma.user.findMany({
+      where: whereClause,
+      orderBy: {
+        createdAt: 'desc',
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phoneNumber: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
-    const formattedUsers = rows.map(user => ({
+    const formattedUsers = users.map(user => ({
       ...user,
       name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
     }));
@@ -64,11 +85,14 @@ export async function GET(req) {
       message: "Erreur serveur lors de la récupération des utilisateurs.",
       error: error.message,
     }, { status: 500 });
-  } finally {
-    if (connection) connection.release();
   }
 }
 
+/**
+ * Gère la requête PUT pour mettre à jour le rôle d'un utilisateur (pour les administrateurs).
+ * @param {Request} req - L'objet Request de Next.js.
+ * @returns {Promise<NextResponse>}
+ */
 export async function PUT(req) {
   const authResult = await authorizeAdmin();
   if (!authResult.authorized) return authResult.response;
@@ -79,42 +103,43 @@ export async function PUT(req) {
     return NextResponse.json({ success: false, message: 'ID utilisateur et rôle sont requis.' }, { status: 400 });
   }
 
-  if (!['admin', 'user'].includes(role.toLowerCase())) {
+  const validRoles = ['ADMIN', 'USER'];
+  const upperCaseRole = role.toUpperCase();
+  if (!validRoles.includes(upperCaseRole)) {
     return NextResponse.json({ success: false, message: 'Rôle invalide. Doit être "admin" ou "user".' }, { status: 400 });
   }
 
-  let connection;
   try {
-    connection = await pool.getConnection();
-    await connection.beginTransaction();
+    const updatedUser = await prisma.user.update({
+      where: {
+        id: id,
+      },
+      data: {
+        role: upperCaseRole,
+      },
+    });
 
-    const [result] = await connection.execute(
-      `UPDATE users SET role = ?, updatedAt = NOW() WHERE id = ?`,
-      [role.toUpperCase(), id]
-    );
-
-    if (result.affectedRows === 0) {
-      await connection.rollback();
+    return NextResponse.json({ success: true, message: 'Rôle utilisateur mis à jour.', user: updatedUser }, { status: 200 });
+  } catch (error) {
+    if (error.code === 'P2025') {
       return NextResponse.json({
         success: false,
         message: 'Utilisateur non trouvé ou rôle inchangé.',
       }, { status: 404 });
     }
-
-    await connection.commit();
-    return NextResponse.json({ success: true, message: 'Rôle utilisateur mis à jour.' }, { status: 200 });
-  } catch (error) {
-    if (connection) await connection.rollback();
     console.error("Erreur PUT utilisateur:", error);
     return NextResponse.json({
       success: false,
       message: `Erreur serveur lors de la mise à jour de l'utilisateur: ${error.message}`,
     }, { status: 500 });
-  } finally {
-    if (connection) connection.release();
   }
 }
 
+/**
+ * Gère la requête DELETE pour supprimer un utilisateur (pour les administrateurs).
+ * @param {Request} req - L'objet Request de Next.js.
+ * @returns {Promise<NextResponse>}
+ */
 export async function DELETE(req) {
   const authResult = await authorizeAdmin();
   if (!authResult.authorized) return authResult.response;
@@ -124,33 +149,24 @@ export async function DELETE(req) {
     return NextResponse.json({ success: false, message: 'ID utilisateur est requis pour la suppression.' }, { status: 400 });
   }
 
-  let connection;
   try {
-    connection = await pool.getConnection();
-    await connection.beginTransaction();
-
-    const [result] = await connection.execute(`DELETE FROM users WHERE id = ?`, [id]);
-
-    if (result.affectedRows === 0) {
-      await connection.rollback();
-      return NextResponse.json({ success: false, message: 'Utilisateur non trouvé.' }, { status: 404 });
-    }
-
-    await connection.commit();
+    await prisma.user.delete({
+      where: {
+        id: id,
+      },
+    });
     return NextResponse.json({ success: true, message: 'Utilisateur supprimé avec succès.' }, { status: 200 });
   } catch (error) {
-    if (connection) await connection.rollback();
-    console.error("Erreur DELETE utilisateur:", error);
-
-    if (error.code === 'ER_ROW_IS_REFERENCED_2') {
+    if (error.code === 'P2025') {
+      return NextResponse.json({ success: false, message: 'Utilisateur non trouvé.' }, { status: 404 });
+    }
+    if (error.code === 'P2003') {
       return NextResponse.json({
         success: false,
         message: 'Impossible de supprimer l\'utilisateur car il est lié à des commandes ou d\'autres données. Veuillez supprimer les données liées d\'abord.',
       }, { status: 409 });
     }
-
+    console.error("Erreur DELETE utilisateur:", error);
     return NextResponse.json({ success: false, message: `Erreur serveur: ${error.message}` }, { status: 500 });
-  } finally {
-    if (connection) connection.release();
   }
 }

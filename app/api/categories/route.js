@@ -1,27 +1,34 @@
+// C:\xampp\htdocs\01_PlawimAdd_Avec_Auth\app\api\categories\route.js
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import pool from '../../../lib/db'; // ou '@/lib/db' selon ta config
+import prisma from '../../../lib/prisma'; // Assure-toi que le chemin est correct.
 
+/**
+ * Gère la requête GET pour récupérer toutes les catégories.
+ * @param {Request} req - L'objet Request de Next.js.
+ * @returns {Promise<NextResponse>}
+ */
 export async function GET(req) {
-  let connection;
   try {
-    connection = await pool.getConnection();
-    const [rows] = await connection.execute('SELECT * FROM categories');
-    return NextResponse.json(rows, { status: 200 });
+    // Utilise prisma.category.findMany pour récupérer toutes les catégories
+    const categories = await prisma.category.findMany();
+    return NextResponse.json(categories, { status: 200 });
   } catch (error) {
     console.error('Erreur lors de la récupération des catégories:', error);
     return NextResponse.json(
       { message: 'Erreur interne du serveur.', error: error.message },
       { status: 500 }
     );
-  } finally {
-    if (connection) connection.release();
   }
 }
 
+/**
+ * Gère la requête POST pour créer une nouvelle catégorie.
+ * @param {Request} req - L'objet Request de Next.js.
+ * @returns {Promise<NextResponse>}
+ */
 export async function POST(req) {
-  let connection;
   try {
     const { name, description, imageUrl } = await req.json();
 
@@ -32,36 +39,44 @@ export async function POST(req) {
       );
     }
 
-    connection = await pool.getConnection();
+    // Vérifier si la catégorie existe déjà par son nom
+    const existingCategory = await prisma.category.findUnique({
+      where: { name: name }, // Assurez-vous que le champ 'name' est unique dans votre schema.prisma
+    });
 
-    // Vérifier si la catégorie existe déjà
-    const [existingCategories] = await connection.execute(
-      'SELECT id FROM categories WHERE name = ?',
-      [name]
-    );
-    if (existingCategories.length > 0) {
+    if (existingCategory) {
       return NextResponse.json(
         { message: 'Cette catégorie existe déjà.' },
         { status: 409 }
       );
     }
 
-    const [result] = await connection.execute(
-      'INSERT INTO categories (name, description, imageUrl) VALUES (?, ?, ?)',
-      [name, description || null, imageUrl || null]
-    );
+    // Crée la nouvelle catégorie en utilisant prisma.category.create
+    const newCategory = await prisma.category.create({
+      data: {
+        name: name,
+        description: description, // Prisma gère null si la valeur est null/undefined
+        imageUrl: imageUrl,       // Prisma gère null si la valeur est null/undefined
+        // createdAt et updatedAt sont gérés automatiquement par Prisma si @default(now()) et @updatedAt sont définis dans le schéma
+      },
+    });
 
     return NextResponse.json(
-      { message: 'Catégorie créée avec succès !', categoryId: result.insertId },
+      { message: 'Catégorie créée avec succès !', categoryId: newCategory.id },
       { status: 201 }
     );
   } catch (error) {
     console.error('Erreur lors de la création de la catégorie:', error);
+    // Gérer l'erreur P2002 (violation de contrainte unique) si le nom est défini comme unique dans le schéma
+    if (error.code === 'P2002' && error.meta?.target?.includes('name')) {
+      return NextResponse.json(
+        { message: 'Une catégorie avec ce nom existe déjà.' },
+        { status: 409 } // Conflit
+      );
+    }
     return NextResponse.json(
       { message: 'Erreur interne du serveur.', error: error.message },
       { status: 500 }
     );
-  } finally {
-    if (connection) connection.release();
   }
 }

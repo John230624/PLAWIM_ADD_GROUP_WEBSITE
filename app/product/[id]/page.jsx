@@ -242,17 +242,19 @@ const Product = () => {
           </div>
         </div>
 
-        {/* PRODUITS POPULAIRES */}
-        <div className="text-center pt-16 pb-20 mt-16">
-          <h2 className="text-3xl font-semibold p-10">
-            Produits <span className="text-blue-600">Populaires</span>
-          </h2>
-          <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {products.slice(0, 5).map((product, index) => (
-              <ProductCard key={index} product={product} />
-            ))}
-          </div>
-        </div>
+       <div className="text-center pt-16 pb-20 mt-16">
+  <h2 className="text-3xl font-semibold p-10">
+    Produits <span className="text-blue-600">Populaires</span>
+  </h2>
+  <div className="mt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+    {products
+      .filter((p) => p.id !== productData?.id) // ✅ exclure le produit en cours
+      .slice(0, 5)
+      .map((product, index) => (
+        <ProductCard key={product.id} product={product} />
+      ))}
+  </div>
+</div>
       </div>
       <Footer />
     </>
