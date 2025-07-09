@@ -1,24 +1,28 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next'; // Correct pour l'App Router
+import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function GET(req) {
   try {
-    // Simplification : pas besoin de headers/cookies pour getServerSession dans les Route Handlers
+    // Récupération de la session de l'utilisateur connecté
     const session = await getServerSession(authOptions);
 
-    if (!session || !session.user || !session.user.id) {
+    // Vérifier si l'utilisateur est authentifié
+    if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, message: 'Non authentifié.' },
         { status: 401 }
       );
     }
 
-    // Exemple : générer un ID de transaction unique
+    // Générer un identifiant unique pour la transaction
     const transactionId = uuidv4();
 
-    // Tu peux ajouter ici d'autres logiques (ex: réserver un panier, vérifier stock, etc.)
+    // TODO: Ajouter ici d'autres logiques métiers, par exemple :
+    // - Vérification du stock
+    // - Réservation du panier
+    // - Calcul du total, etc.
 
     return NextResponse.json(
       {

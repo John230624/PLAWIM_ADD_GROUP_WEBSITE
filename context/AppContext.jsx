@@ -7,6 +7,33 @@ import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { toast } from 'react-toastify';
 
+// Définitions de types minimales pour éviter les erreurs "implicitly has an 'any' type"
+/**
+ * @typedef {Object} ProductType
+ * @property {string} id
+ * @property {string} name
+ * @property {string} description
+ * @property {number} price
+ * @property {number} stock
+ * @property {string[]} imgUrl
+ * @property {number} [offerPrice]
+ * @property {string} [category]
+ * @property {number} [rating]
+ */
+
+/**
+ * @typedef {Object} AddressType
+ * @property {number} id
+ * @property {string} userId
+ * @property {string} fullName
+ * @property {string} phoneNumber
+ * @property {string} [pincode]
+ * @property {string} area
+ * @property {string} city
+ * @property {string} state
+ * @property {boolean} isDefault
+ */
+
 const AppContext = createContext();
 
 const formatPriceInFCFA = (price) => {
@@ -23,11 +50,13 @@ export const AppProvider = ({ children }) => {
     const router = useRouter();
     const { data: session, status } = useSession(); 
 
+    /** @type {ProductType[]} */
     const [products, setProducts] = useState([]);
     const [loadingProducts, setLoadingProducts] = useState(true);
     const [errorProducts, setErrorProducts] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
+    /** @type {ProductType[]} */
     const [filteredProducts, setFilteredProducts] = useState([]);
     const [cartItems, setCartItems] = useState({});
     const [loadingCart, setLoadingCart] = useState(true); 
@@ -35,6 +64,7 @@ export const AppProvider = ({ children }) => {
     const [isLoggedIn, setIsLoggedIn] = useState(false); 
     const [userOrders, setUserOrders] = useState([]);
     const [loadingOrders, setLoadingOrders] = useState(true); 
+    /** @type {AddressType[]} */
     const [userAddresses, setUserAddresses] = useState([]);
     const [loadingAddresses, setLoadingAddresses] = useState(true); 
     const [currency, setCurrency] = useState('XOF'); 
@@ -119,7 +149,7 @@ export const AppProvider = ({ children }) => {
                     toast.info("Session expirée, veuillez vous reconnecter.");
                     if (isLoggedIn) router.push('/login'); 
                 } else if (error.response.status === 404) {
-                     toast.error("Endpoint du panier non trouvé. Veuillez vérifier la route API.");
+                    toast.error("Endpoint du panier non trouvé. Veuillez vérifier la route API.");
                 }
             } else {
                 toast.error("Erreur lors du chargement du panier. Veuillez réessayer.");
@@ -274,6 +304,12 @@ export const AppProvider = ({ children }) => {
         }
     }, [url, isLoggedIn, currentUser?.id, router, cartItems]);
 
+    const clearCart = useCallback(() => {
+        setCartItems({});
+        localStorage.removeItem('cartItems');
+        console.log("Panier vidé côté client.");
+    }, []);
+
     const getCartCount = useCallback(() => {
         return Object.values(cartItems).reduce((sum, qty) => sum + qty, 0);
     }, [cartItems]);
@@ -290,7 +326,6 @@ export const AppProvider = ({ children }) => {
     }, [cartItems, products]);
 
     const fetchUserOrders = useCallback(async () => {
-        // Ajout d'un log pour voir l'état de currentUser au moment de l'appel
         console.log("fetchUserOrders called. isLoggedIn:", isLoggedIn, "currentUser:", currentUser);
 
         if (!isLoggedIn || !currentUser?.id) {
@@ -318,13 +353,13 @@ export const AppProvider = ({ children }) => {
                     toast.info("Votre session a expiré. Veuillez vous reconnecter.");
                     if (isLoggedIn) router.push('/login');
                 } else if (error.response.status === 404) {
-                     toast.error("Endpoint des commandes non trouvé. Veuillez vérifier la route API.");
+                    toast.error("Endpoint des commandes non trouvé. Veuillez vérifier la route API.");
                 }
             }
         } finally {
             setLoadingOrders(false);
         }
-    }, [url, isLoggedIn, currentUser?.id, router]); // Dépendance sur currentUser?.id
+    }, [url, isLoggedIn, currentUser?.id, router]);
 
     const fetchUserAddresses = useCallback(async () => {
         if (!isLoggedIn || !currentUser?.id) {
@@ -366,16 +401,16 @@ export const AppProvider = ({ children }) => {
         }
 
         try {
-            const response = await axios.get(`${url}/api/order/prepare-payment`); 
+            const response = await axios.post(`${url}/api/order/prepare-payment`, orderData); 
 
             if (response.status === 200 && response.data.success) {
-                return { success: true, orderId: response.data.transactionId }; 
+                return { success: true, transactionId: response.data.transactionId, paymentUrl: response.data.paymentUrl }; 
             } else {
-                toast.error(response.data.message || "Échec de la commande.");
-                return { success: false, message: response.data.message || "Échec de la commande." };
+                toast.error(response.data.message || "Échec de la préparation du paiement.");
+                return { success: false, message: response.data.message || "Échec de la préparation du paiement." };
             }
         } catch (error) {
-            console.error("Erreur lors de la création de la commande:", error);
+            console.error("Erreur lors de la création/préparation de la commande:", error);
             let errorMessage = "Une erreur est survenue lors de la commande.";
             if (axios.isAxiosError(error) && error.response) {
                 errorMessage = error.response.data.message || `Erreur serveur: ${error.response.status}`;
@@ -383,9 +418,9 @@ export const AppProvider = ({ children }) => {
                     toast.info("Votre session a expiré. Veuillez vous reconnecter.");
                     router.push('/login');
                 } else if (error.response.status === 404) {
-                    errorMessage = "Endpoint de création de commande non trouvé. Vérifiez l'API ou les données.";
+                    errorMessage = "Endpoint de préparation de commande non trouvé. Vérifiez l'API ou les données.";
                 } else if (error.response.status === 405) {
-                    errorMessage = "Méthode non autorisée pour la création de commande. Vérifiez l'API.";
+                    errorMessage = "Méthode non autorisée pour la préparation de commande. Vérifiez l'API.";
                 }
             } else if (error.request) {
                 errorMessage = "Impossible de contacter le serveur. Vérifiez votre connexion internet.";
@@ -433,7 +468,6 @@ export const AppProvider = ({ children }) => {
         }
     }, [session, status]);
 
-    // Déclencher le chargement des données spécifiques à l'utilisateur UNIQUEMENT quand currentUser est prêt et connecté
     useEffect(() => {
         if (status === 'authenticated' && isLoggedIn && currentUser?.id) {
             console.log("AppContext: User authenticated, fetching user specific data.", currentUser.id);
@@ -442,7 +476,6 @@ export const AppProvider = ({ children }) => {
             fetchUserAddresses();
         } else if (status === 'unauthenticated') {
             console.log("AppContext: User unauthenticated, clearing user specific data.");
-            // Ces actions sont déjà dans le bloc else du premier useEffect, mais on peut les répéter ici pour clarté
             setCartItems({}); 
             setUserOrders([]); 
             setUserAddresses([]); 
@@ -496,6 +529,7 @@ export const AppProvider = ({ children }) => {
         getCartAmount,
         loadingCart,
         loadCartData,
+        clearCart,
 
         currentUser,
         setCurrentUser,
@@ -526,10 +560,4 @@ export const AppProvider = ({ children }) => {
     );
 };
 
-export const useAppContext = () => {
-    const context = useContext(AppContext);
-    if (context === undefined) {
-        throw new Error('useAppContext must be used within an AppProvider');
-    }
-    return context;
-};
+export const useAppContext = () => useContext(AppContext);

@@ -1,0 +1,39 @@
+Paiement réussi :
+
+61000000
+
+97000000
+
+Erreur de traitement :
+
+61000001
+
+97000001
+
+Fonds insuffisants :
+
+61000002
+
+97000002
+
+Paiement refusé :
+
+61000003
+
+97000003
+
+Kkiapay fournit également des numéros pour simuler des paiements réussis avec des temps d'attente spécifiques pour l'opérateur GSM MTN Bénin :
+
+Avec 1 minute d'attente :
+
+61100000
+
+97100000
+
+Avec 2 minutes d'attente :
+
+61200000
+
+97200000
+
+Des numéros similaires sont disponibles pour d'autres opérateurs et scénarios avec temps d'attente, y compris pour la Côte d'Ivoire (ex: 2250577110000 pour 1 min d'attente).
