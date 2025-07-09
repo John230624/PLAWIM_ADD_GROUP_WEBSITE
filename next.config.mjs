@@ -23,12 +23,6 @@ const nextConfig = {
       },
     ],
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  experimental: {
-    incrementalCacheHandlerPath: './cache-handler.js'
-  }
 };
 
 export default nextConfig;
