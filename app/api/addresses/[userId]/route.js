@@ -1,8 +1,13 @@
+// C:\xampp\htdocs\01_PlawimAdd_Avec_Auth\app\api\addresses\[userId]\route.js
+
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
 import prisma from '@/lib/prisma';
 
+console.log("--> API Route: app/api/addresses/[userId]/route.js loaded");
+
+// Fonction utilitaire pour autoriser l'utilisateur
 async function authorizeUser(userIdFromParams) {
   const session = await getServerSession(authOptions);
 
@@ -25,11 +30,13 @@ async function authorizeUser(userIdFromParams) {
   return { authorized: true, userId: userIdFromParams, session };
 }
 
+/**
+ * Gère la requête GET pour récupérer les adresses d'un utilisateur.
+ * GET /api/addresses/[userId]
+ */
 export async function GET(req, context) {
-  // --- CORRECTION HERE ---
-  const params = await context.params;
-  const userId = params.userId;
-  // --- END CORRECTION ---
+  // CORRECTION: Pas besoin de 'await' pour context.params
+  const { userId } = context.params;
 
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
@@ -44,12 +51,12 @@ export async function GET(req, context) {
       select: {
         id: true,
         fullName: true,
+        isDefault: true,
         phoneNumber: true,
         pincode: true,
         area: true,
         city: true,
         state: true,
-        isDefault: true,
       },
     });
     return NextResponse.json(addresses, { status: 200 });
@@ -62,11 +69,13 @@ export async function GET(req, context) {
   }
 }
 
+/**
+ * Gère la requête POST pour ajouter une nouvelle adresse pour un utilisateur.
+ * POST /api/addresses/[userId]
+ */
 export async function POST(req, context) {
-  // --- CORRECTION HERE ---
-  const params = await context.params;
-  const userId = params.userId;
-  // --- END CORRECTION ---
+  // CORRECTION: Pas besoin de 'await' pour context.params
+  const { userId } = context.params;
 
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
@@ -122,11 +131,13 @@ export async function POST(req, context) {
   }
 }
 
+/**
+ * Gère la requête PUT pour mettre à jour une adresse existante.
+ * Le corps de la requête doit inclure l'ID de l'adresse à mettre à jour.
+ */
 export async function PUT(req, context) {
-  // --- CORRECTION HERE ---
-  const params = await context.params;
-  const userId = params.userId;
-  // --- END CORRECTION ---
+  // CORRECTION: Pas besoin de 'await' pour context.params
+  const { userId } = context.params;
 
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
@@ -202,11 +213,12 @@ export async function PUT(req, context) {
   }
 }
 
+/**
+ * Gère la requête DELETE pour supprimer une adresse existante.
+ */
 export async function DELETE(req, context) {
-  // --- CORRECTION HERE ---
-  const params = await context.params;
-  const userId = params.userId;
-  // --- END CORRECTION ---
+  // CORRECTION: Pas besoin de 'await' pour context.params
+  const { userId } = context.params;
 
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
