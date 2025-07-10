@@ -1,31 +1,24 @@
 // C:\xampp\htdocs\01_PlawimAdd_Avec_Auth\app\api\admin\orders\route.js
 
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next'; // Use next/next for latest getServerSession
+import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/authOptions';
-import prisma from '@/lib/prisma'; // Import the Prisma client
-import { headers, cookies } from 'next/headers';
+import prisma from '@/lib/prisma';
+// import { headers, cookies } from 'next/headers'; // Pas nécessaire ici, getServerSession les gère
 
-/**
- * Authorization function to check if the user is authenticated and has the 'ADMIN' role.
- * @returns {Promise<{authorized: boolean, response?: NextResponse}>}
- */
+// Fonction utilitaire pour autoriser l'utilisateur (ADMIN)
 async function authorizeAdmin() {
-  const session = await getServerSession(authOptions, {
-    headers: headers(),
-    cookies: cookies(),
-  });
+  // CORRECTION: Enlève les options headers et cookies, getServerSession les gère automatiquement dans les Route Handlers
+  const session = await getServerSession(authOptions);
 
   if (!session || !session.user) {
     console.warn("Unauthorized access attempt to /api/admin/orders API.");
     return {
       authorized: false,
-      response: NextResponse.json({ message: 'Unauthorized.' }, { status: 401 }),
+      response: NextResponse.json({ message: 'Non authentifié.' }, { status: 401 }),
     };
   }
 
-  // Ensure the role is included in the session/token via NextAuth callbacks
-  // as configured in lib/authOptions.js
   if (session.user.role?.toLowerCase() !== 'admin') {
     console.warn(`Forbidden access attempt to /api/admin/orders API by user ${session.user.id} (Role: ${session.user.role || 'None'})`);
     return {
@@ -43,81 +36,70 @@ async function authorizeAdmin() {
  * @param {Request} req - The Next.js Request object.
  * @returns {Promise<NextResponse>}
  */
-export async function GET(req) {
+export async function GET(req) { // Pas de 'context' ici car pas de paramètres dynamiques
   const authResult = await authorizeAdmin();
   if (!authResult.authorized) return authResult.response;
 
   try {
-    // Use prisma.order.findMany to fetch all orders with their related user, order items, and payments.
     const orders = await prisma.order.findMany({
       include: {
-        user: { // Include user details
+        user: {
           select: {
             id: true,
             email: true,
             firstName: true,
             lastName: true,
-            phoneNumber: true, // Assuming phoneNumber is on the User model
+            phoneNumber: true,
           },
         },
-        orderItems: { // Include order items
+        orderItems: {
           include: {
-            product: { // Include product details for each order item
+            product: {
               select: {
                 id: true,
                 name: true,
-                imgUrl: true, // Assuming imgUrl is directly on the Product model
+                imgUrl: true,
               },
             },
           },
         },
-        payment: { // Include payment details (it's a 1-to-1 relation, so it's directly here)
+        payment: {
           select: {
             paymentMethod: true,
-            status: true, // Renamed to 'status' in Payment model (was 'paymentStatusDetail')
+            status: true,
             transactionId: true,
             paymentDate: true,
           },
         },
       },
       orderBy: {
-        orderDate: 'desc', // Sort orders by date, from newest to oldest
+        orderDate: 'desc',
       },
     });
 
-    // Map the results to match the structure of your original SQL query output,
-    // especially for concatenated names and image URLs.
     const formattedOrders = orders.map(order => {
       const userFullName = `${order.user?.firstName || ''} ${order.user?.lastName || ''}`.trim();
 
       const parsedItems = order.orderItems.map(item => {
-        let itemImgUrl = [];
-        // Handle JSON parsing for imgUrl from Product, similar to your original logic
-        if (item.product?.imgUrl) {
-          try {
-            const parsed = JSON.parse(item.product.imgUrl);
-            if (Array.isArray(parsed)) itemImgUrl = parsed;
-            else if (typeof parsed === 'string') itemImgUrl = [parsed];
-          } catch {
-            if (typeof item.product.imgUrl === 'string' && (item.product.imgUrl.startsWith('/') || item.product.imgUrl.startsWith('http'))) {
-              itemImgUrl = [item.product.imgUrl];
-            }
-          }
+        let itemImgUrl = '/placeholder-product.png'; // Valeur par défaut
+
+        // Simplification de la logique d'image: s'attend à une simple chaîne
+        if (item.product?.imgUrl && typeof item.product.imgUrl === 'string' && item.product.imgUrl.trim() !== '') {
+          itemImgUrl = item.product.imgUrl;
         }
         return {
           productId: item.productId,
           quantity: item.quantity,
           priceAtOrder: item.priceAtOrder,
           name: item.product?.name,
-          // Take the first image URL or a placeholder
-          imgUrl: itemImgUrl.length > 0 ? itemImgUrl[0] : '/placeholder-product.png',
+          imgUrl: itemImgUrl,
         };
       });
 
       return {
         id: order.id,
         totalAmount: order.totalAmount,
-        orderStatus: order.status, // Directly use the enum value
+        orderStatus: order.status,
         shippingAddressLine1: order.shippingAddressLine1,
         shippingAddressLine2: order.shippingAddressLine2,
         shippingCity: order.shippingCity,
@@ -129,7 +111,7 @@ export async function GET(req) {
         userEmail: order.user?.email,
         userPhoneNumber: order.user?.phoneNumber,
         paymentMethod: order.payment?.paymentMethod,
-        paymentStatusDetail: order.payment?.status, // Use the enum value
+        paymentStatusDetail: order.payment?.status,
         paymentTransactionId: order.payment?.transactionId,
         paymentDate: order.payment?.paymentDate,
         items: parsedItems,
@@ -144,5 +126,6 @@ export async function GET(req) {
       { status: 500 }
     );
   }
-  // No `finally` block with `connection.release()` needed with Prisma
 }
+// Pas d'autres fonctions POST, PUT, DELETE dans ce fichier si c'est une route pour toutes les commandes.
+// Si vous avez des routes pour des commandes spécifiques (ex: /api/admin/orders/[orderId]), elles devraient être dans un fichier [orderId]/route.js
