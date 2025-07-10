@@ -1,21 +1,54 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { authorizeUser } from '@/lib/authorizeUser';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/authOptions';
+
+async function authorizeUser(userIdFromParams) {
+  const session = await getServerSession(authOptions);
+  
+  if (!session) {
+    console.warn(`Tentative d'accès non authentifiée à /api/orders/${userIdFromParams}`);
+    return {
+      authorized: false,
+      response: NextResponse.json({ message: 'Non authentifié.' }, { status: 401 }),
+    };
+  }
+
+  if (String(session.user.id) !== String(userIdFromParams)) {
+    console.warn(`Tentative d'accès non autorisé à /api/orders/${userIdFromParams} par userId ${session.user.id}`);
+    return {
+      authorized: false,
+      response: NextResponse.json({ message: 'Non autorisé. Cet historique de commandes ne vous appartient pas.' }, { status: 403 }),
+    };
+  }
+
+  return { authorized: true, userId: userIdFromParams, session };
+}
 
 export async function GET(req, context) {
-  const { params } = context;
-  const { userId } = params;
+  // --- CORRECTION HERE ---
+  const params = await context.params;
+  const userId = params.userId;
+  // --- END CORRECTION ---
 
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
 
   try {
     const orders = await prisma.order.findMany({
-      where: { userId },
+      where: {
+        userId: userId,
+      },
       include: {
         orderItems: {
           include: {
-            product: { select: { id: true, name: true, imgUrl: true } },
+            product: {
+              select: {
+                id: true,
+                name: true,
+                imgUrl: true,
+              },
+            },
           },
         },
         payment: {
@@ -27,7 +60,9 @@ export async function GET(req, context) {
           },
         },
       },
-      orderBy: { orderDate: 'desc' },
+      orderBy: {
+        orderDate: 'desc',
+      },
     });
 
     const formattedOrders = orders.map(order => {
@@ -39,10 +74,7 @@ export async function GET(req, context) {
             if (Array.isArray(parsed)) itemImgUrl = parsed;
             else if (typeof parsed === 'string') itemImgUrl = [parsed];
           } catch {
-            if (
-              typeof item.product.imgUrl === 'string' &&
-              (item.product.imgUrl.startsWith('/') || item.product.imgUrl.startsWith('http'))
-            ) {
+            if (typeof item.product.imgUrl === 'string' && (item.product.imgUrl.startsWith('/') || item.product.imgUrl.startsWith('http'))) {
               itemImgUrl = [item.product.imgUrl];
             }
           }
@@ -50,7 +82,7 @@ export async function GET(req, context) {
         return {
           productId: item.productId,
           quantity: item.quantity,
-          priceAtOrder: item.priceAtOrder.toNumber(),
+          priceAtOrder: item.priceAtOrder,
           name: item.product?.name,
           imgUrl: itemImgUrl.length > 0 ? itemImgUrl[0] : '/placeholder-product.png',
         };
@@ -58,8 +90,9 @@ export async function GET(req, context) {
 
       return {
         id: order.id,
-        totalAmount: order.totalAmount.toNumber(),
+        totalAmount: order.totalAmount,
         orderStatus: order.status,
+        paymentStatus: order.paymentStatus,
         shippingAddressLine1: order.shippingAddressLine1,
         shippingAddressLine2: order.shippingAddressLine2,
         shippingCity: order.shippingCity,
@@ -68,19 +101,16 @@ export async function GET(req, context) {
         shippingCountry: order.shippingCountry,
         orderDate: order.orderDate,
         paymentMethod: order.payment?.paymentMethod,
-        paymentStatus: order.payment?.status,
+        paymentStatusDetail: order.payment?.status,
         paymentDate: order.payment?.paymentDate,
         paymentTransactionId: order.payment?.transactionId,
         items: parsedItems,
       };
     });
 
-    return NextResponse.json(formattedOrders);
+    return NextResponse.json(formattedOrders, { status: 200 });
   } catch (error) {
     console.error("Erreur GET commandes:", error);
-    return NextResponse.json(
-      { message: "Erreur serveur lors de la récupération des commandes.", error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: "Erreur serveur lors de la récupération des commandes.", error: error.message }, { status: 500 });
   }
 }

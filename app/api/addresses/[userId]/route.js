@@ -1,17 +1,46 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/authOptions';
 import prisma from '@/lib/prisma';
-import { authorizeUser } from '@/lib/authorizeUser';
+
+async function authorizeUser(userIdFromParams) {
+  const session = await getServerSession(authOptions);
+
+  if (!session) {
+    console.warn(`Tentative d'accès non authentifiée à /api/addresses/${userIdFromParams}`);
+    return {
+      authorized: false,
+      response: NextResponse.json({ message: 'Non authentifié.' }, { status: 401 }),
+    };
+  }
+
+  if (String(session.user.id) !== String(userIdFromParams)) {
+    console.warn(`Tentative d'accès non autorisé à /api/addresses/${userIdFromParams} par userId ${session.user.id}`);
+    return {
+      authorized: false,
+      response: NextResponse.json({ message: 'Non autorisé.' }, { status: 403 }),
+    };
+  }
+
+  return { authorized: true, userId: userIdFromParams, session };
+}
 
 export async function GET(req, context) {
-  const { params } = context;
-  const { userId } = params;
+  // --- CORRECTION HERE ---
+  const params = await context.params;
+  const userId = params.userId;
+  // --- END CORRECTION ---
+
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
 
   try {
     const addresses = await prisma.address.findMany({
-      where: { userId },
-      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+      where: { userId: userId },
+      orderBy: [
+        { isDefault: 'desc' },
+        { createdAt: 'desc' },
+      ],
       select: {
         id: true,
         fullName: true,
@@ -23,7 +52,7 @@ export async function GET(req, context) {
         isDefault: true,
       },
     });
-    return NextResponse.json(addresses);
+    return NextResponse.json(addresses, { status: 200 });
   } catch (error) {
     console.error("Erreur GET adresses:", error);
     return NextResponse.json(
@@ -34,12 +63,16 @@ export async function GET(req, context) {
 }
 
 export async function POST(req, context) {
-  const { params } = context;
-  const { userId } = params;
+  // --- CORRECTION HERE ---
+  const params = await context.params;
+  const userId = params.userId;
+  // --- END CORRECTION ---
+
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
 
   const { fullName, phoneNumber, pincode, area, city, state, isDefault = false } = await req.json();
+
   if (!fullName || !phoneNumber || !area || !city || !state) {
     return NextResponse.json(
       { success: false, message: "Tous les champs d'adresse requis ne sont pas fournis." },
@@ -51,14 +84,31 @@ export async function POST(req, context) {
     const newAddress = await prisma.$transaction(async (tx) => {
       if (isDefault) {
         await tx.address.updateMany({
-          where: { userId, isDefault: true },
-          data: { isDefault: false },
+          where: {
+            userId: userId,
+            isDefault: true,
+          },
+          data: {
+            isDefault: false,
+          },
         });
       }
-      return tx.address.create({
-        data: { userId, fullName, phoneNumber, pincode, area, city, state, isDefault },
+
+      const createdAddress = await tx.address.create({
+        data: {
+          userId: userId,
+          fullName: fullName,
+          phoneNumber: phoneNumber,
+          pincode: pincode,
+          area: area,
+          city: city,
+          state: state,
+          isDefault: isDefault,
+        },
       });
+      return createdAddress;
     });
+
     return NextResponse.json(
       { success: true, message: "Adresse ajoutée avec succès.", id: newAddress.id },
       { status: 201 }
@@ -73,12 +123,16 @@ export async function POST(req, context) {
 }
 
 export async function PUT(req, context) {
-  const { params } = context;
-  const { userId } = params;
+  // --- CORRECTION HERE ---
+  const params = await context.params;
+  const userId = params.userId;
+  // --- END CORRECTION ---
+
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
 
   const { id, fullName, phoneNumber, pincode, area, city, state, isDefault } = await req.json();
+
   if (
     !id ||
     fullName === undefined ||
@@ -95,19 +149,44 @@ export async function PUT(req, context) {
   }
 
   try {
-    await prisma.$transaction(async (tx) => {
+    const updatedAddress = await prisma.$transaction(async (tx) => {
       if (isDefault) {
         await tx.address.updateMany({
-          where: { userId, isDefault: true, id: { not: id } },
-          data: { isDefault: false },
+          where: {
+            userId: userId,
+            isDefault: true,
+            id: {
+              not: id,
+            },
+          },
+          data: {
+            isDefault: false,
+          },
         });
       }
-      await tx.address.update({
-        where: { id, userId },
-        data: { fullName, phoneNumber, pincode, area, city, state, isDefault },
+
+      const result = await tx.address.update({
+        where: {
+          id: id,
+          userId: userId,
+        },
+        data: {
+          fullName: fullName,
+          phoneNumber: phoneNumber,
+          pincode: pincode,
+          area: area,
+          city: city,
+          state: state,
+          isDefault: isDefault,
+        },
       });
+      return result;
     });
-    return NextResponse.json({ success: true, message: "Adresse mise à jour avec succès." });
+
+    return NextResponse.json(
+      { success: true, message: "Adresse mise à jour avec succès." },
+      { status: 200 }
+    );
   } catch (error) {
     if (error.code === 'P2025') {
       return NextResponse.json(
@@ -124,12 +203,16 @@ export async function PUT(req, context) {
 }
 
 export async function DELETE(req, context) {
-  const { params } = context;
-  const { userId } = params;
+  // --- CORRECTION HERE ---
+  const params = await context.params;
+  const userId = params.userId;
+  // --- END CORRECTION ---
+
   const authResult = await authorizeUser(userId);
   if (!authResult.authorized) return authResult.response;
 
   const { id } = await req.json();
+
   if (!id) {
     return NextResponse.json(
       { success: false, message: "L'ID de l'adresse est requis." },
@@ -138,10 +221,17 @@ export async function DELETE(req, context) {
   }
 
   try {
-    await prisma.address.delete({
-      where: { id, userId },
+    const deletedAddress = await prisma.address.delete({
+      where: {
+        id: id,
+        userId: userId,
+      },
     });
-    return NextResponse.json({ success: true, message: "Adresse supprimée." });
+
+    return NextResponse.json(
+      { success: true, message: "Adresse supprimée." },
+      { status: 200 }
+    );
   } catch (error) {
     if (error.code === 'P2025') {
       return NextResponse.json(

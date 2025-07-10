@@ -1,9 +1,10 @@
 // C:\xampp\htdocs\01_PlawimAdd_Avec_Auth\app\api\admin\users\route.js
 
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next'; // Version correcte pour l'App Router
+import { getServerSession } from 'next-auth/next'; // Utilise next/next pour getServerSession
 import { authOptions } from '@/lib/authOptions';
-import prisma from '@/lib/prisma';
+import prisma from '@/lib/prisma'; // Importe le client Prisma
+import { headers, cookies } from 'next/headers';
 
 /**
  * Fonction d'autorisation pour les administrateurs.
@@ -11,8 +12,10 @@ import prisma from '@/lib/prisma';
  * @returns {Promise<{authorized: boolean, response?: NextResponse}>}
  */
 async function authorizeAdmin() {
-  // CORRECTION ICI : Appelle getServerSession SANS le deuxième argument (headers/cookies)
-  const session = await getServerSession(authOptions);
+  const session = await getServerSession(authOptions, {
+    headers: headers(),
+    cookies: cookies(),
+  });
 
   if (!session || !session.user) {
     console.warn("Accès non authentifié à l'API admin/users.");
@@ -22,6 +25,8 @@ async function authorizeAdmin() {
     };
   }
 
+  // Assure-toi que le rôle est bien inclus dans la session/token via les callbacks de NextAuth
+  // comme configuré dans lib/authOptions.js
   if (session.user.role?.toLowerCase() !== 'admin') {
     console.warn(`Accès non autorisé à l'API admin/users par utilisateur ${session.user.id} (Rôle: ${session.user.role || 'Aucun'})`);
     return {
@@ -54,12 +59,13 @@ export async function GET(req) {
       whereClause.role = 'USER'; // Utilise la valeur de l'enum définie dans Prisma
     }
 
+    // Utilise prisma.user.findMany pour récupérer les utilisateurs
     const users = await prisma.user.findMany({
       where: whereClause,
       orderBy: {
         createdAt: 'desc',
       },
-      select: {
+      select: { // Sélectionne explicitement les champs nécessaires
         id: true,
         firstName: true,
         lastName: true,
@@ -101,24 +107,29 @@ export async function PUT(req) {
     return NextResponse.json({ success: false, message: 'ID utilisateur et rôle sont requis.' }, { status: 400 });
   }
 
-  const validRoles = ['ADMIN', 'USER'];
+  // Vérifie si le rôle est une valeur valide de l'enum UserRole
+  const validRoles = ['ADMIN', 'USER']; // Assure-toi que ces valeurs correspondent à ton enum UserRole dans schema.prisma
   const upperCaseRole = role.toUpperCase();
   if (!validRoles.includes(upperCaseRole)) {
     return NextResponse.json({ success: false, message: 'Rôle invalide. Doit être "admin" ou "user".' }, { status: 400 });
   }
 
   try {
+    // Utilise prisma.user.update pour mettre à jour le rôle
     const updatedUser = await prisma.user.update({
       where: {
         id: id,
       },
       data: {
-        role: upperCaseRole,
+        role: upperCaseRole, // Utilise la valeur de l'enum
+        // updatedAt est géré par @updatedAt dans le schéma Prisma
       },
     });
 
+    // Si l'utilisateur n'est pas trouvé, Prisma lancera une erreur P2025
     return NextResponse.json({ success: true, message: 'Rôle utilisateur mis à jour.', user: updatedUser }, { status: 200 });
   } catch (error) {
+    // Gérer l'erreur si l'utilisateur n'est pas trouvé (P2025)
     if (error.code === 'P2025') {
       return NextResponse.json({
         success: false,
@@ -148,6 +159,7 @@ export async function DELETE(req) {
   }
 
   try {
+    // Utilise prisma.user.delete pour supprimer l'utilisateur
     await prisma.user.delete({
       where: {
         id: id,
@@ -155,11 +167,12 @@ export async function DELETE(req) {
     });
     return NextResponse.json({ success: true, message: 'Utilisateur supprimé avec succès.' }, { status: 200 });
   } catch (error) {
+    // Gérer l'erreur si l'utilisateur n'est pas trouvé (P2025)
     if (error.code === 'P2025') {
       return NextResponse.json({ success: false, message: 'Utilisateur non trouvé.' }, { status: 404 });
     }
+    // Gérer l'erreur de contrainte de clé étrangère (P2003)
     if (error.code === 'P2003') {
-      // P2003 = Foreign key constraint failed on the database
       return NextResponse.json({
         success: false,
         message: 'Impossible de supprimer l\'utilisateur car il est lié à des commandes ou d\'autres données. Veuillez supprimer les données liées d\'abord.',

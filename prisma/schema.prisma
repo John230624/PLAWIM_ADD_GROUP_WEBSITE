@@ -19,8 +19,8 @@ model Address {
   city        String   @db.VarChar(100)
   state       String   @db.VarChar(100)
   isDefault   Boolean  @default(false) @map("isDefault")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) // CORRIGÉ: Suppression de @db.Timestamp(0)
+  updatedAt   DateTime @updatedAt      // CORRIGÉ: Suppression de @db.Timestamp(0)
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   orders      Order[]
@@ -32,8 +32,8 @@ model CartItem {
   userId    String   @db.VarChar(255)
   productId String   @db.VarChar(255)
   quantity  Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) // CORRIGÉ: Suppression de @db.Timestamp(0)
+  updatedAt DateTime @updatedAt      // CORRIGÉ: Suppression de @db.Timestamp(0)
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
@@ -47,8 +47,8 @@ model Category {
   name        String   @unique @db.VarChar(255)
   description String?  @db.Text
   imageUrl    String?  @db.VarChar(255)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) // CORRIGÉ: Suppression de @db.Timestamp(0)
+  updatedAt   DateTime @updatedAt      // CORRIGÉ: Suppression de @db.Timestamp(0)
 
   @@map("categories")
 }
@@ -73,26 +73,26 @@ enum PaymentStatus {
 }
 
 model Order {
-  id                     String        @id @default(uuid()) @db.VarChar(255)
-  userId                 String        @db.VarChar(255)
-  totalAmount            Decimal       @db.Decimal(10, 2)
-  kakapayTransactionId   String?       @db.VarChar(255) @map("kakapayTransactionId")
-  status                 OrderStatus?  @default(PENDING)
-  paymentStatus          PaymentStatus? @default(PENDING) @map("paymentStatus")
-  shippingAddressLine1   String        @db.VarChar(255) @map("shippingAddressLine1")
-  shippingAddressLine2   String?       @db.VarChar(255) @map("shippingAddressLine2")
-  shippingCity           String        @db.VarChar(100) @map("shippingCity")
-  shippingState          String        @db.VarChar(100) @map("shippingState")
-  shippingZipCode        String        @db.VarChar(20) @map("shippingZipCode")
-  shippingCountry        String        @db.VarChar(100) @map("shippingCountry")
-  orderDate              DateTime      @default(now())
-  updatedAt              DateTime      @updatedAt
-  shippingAddressId      Int?          @map("shippingAddressId")
+  id                   String        @id @default(uuid()) @db.VarChar(255)
+  userId               String        @db.VarChar(255)
+  totalAmount          Decimal       @db.Decimal(10, 2)
+  kakapayTransactionId String?       @db.VarChar(255) @map("kakapayTransactionId")
+  status               OrderStatus?  @default(PENDING)
+  paymentStatus        PaymentStatus? @default(PENDING) @map("paymentStatus")
+  shippingAddressLine1 String        @db.VarChar(255) @map("shippingAddressLine1")
+  shippingAddressLine2 String?       @db.VarChar(255) @map("shippingAddressLine2")
+  shippingCity         String        @db.VarChar(100) @map("shippingCity")
+  shippingState        String        @db.VarChar(100) @map("shippingState")
+  shippingZipCode      String        @db.VarChar(20) @map("shippingZipCode")
+  shippingCountry      String        @db.VarChar(100) @map("shippingCountry")
+  orderDate            DateTime      @default(now()) // CORRIGÉ: Suppression de @db.Timestamp(0)
+  updatedAt            DateTime      @updatedAt      // CORRIGÉ: Suppression de @db.Timestamp(0)
+  shippingAddressId    Int?          @map("shippingAddressId")
 
-  user                   User          @relation(fields: [userId], references: [id])
-  shippingAddress        Address?      @relation(fields: [shippingAddressId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  orderItems             OrderItem[]
-  payment                Payment?
+  user                 User          @relation(fields: [userId], references: [id])
+  shippingAddress      Address?      @relation(fields: [shippingAddressId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  orderItems           OrderItem[]
+  payment              Payment?
 
   @@map("orders")
 }
@@ -103,10 +103,8 @@ model OrderItem {
   productId    String   @db.VarChar(255)
   quantity     Int
   priceAtOrder Decimal  @db.Decimal(10, 2) @map("priceAtOrder")
-  name         String   @db.VarChar(255)
-  imgUrl       String?  @db.Text
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now()) // CORRIGÉ: Suppression de @db.Timestamp(0)
+  updatedAt    DateTime @updatedAt      // CORRIGÉ: Suppression de @db.Timestamp(0)
 
   order        Order    @relation(fields: [orderId], references: [id])
   product      Product  @relation(fields: [productId], references: [id])
@@ -115,33 +113,33 @@ model OrderItem {
 }
 
 model Payment {
-  id            String         @id @default(uuid()) @db.VarChar(255)
-  orderId       String         @unique @db.VarChar(255)
-  paymentMethod String         @db.VarChar(100) @map("paymentMethod")
-  transactionId String?        @unique @db.VarChar(255) @map("transactionId")
-  amount        Decimal        @db.Decimal(10, 2)
-  currency      String         @db.VarChar(10)
+  id            String       @id @default(uuid()) @db.VarChar(255)
+  orderId       String       @unique @db.VarChar(255)
+  paymentMethod String       @db.VarChar(100) @map("paymentMethod")
+  transactionId String?      @unique @db.VarChar(255) @map("transactionId")
+  amount        Decimal      @db.Decimal(10, 2)
+  currency      String       @db.VarChar(10)
   status        PaymentStatus? @default(PENDING)
-  paymentDate   DateTime?      @map("paymentDate")
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  paymentDate   DateTime?    @map("paymentDate") // CORRIGÉ: Suppression de @db.Timestamp(0)
+  createdAt     DateTime     @default(now()) // CORRIGÉ: Suppression de @db.Timestamp(0)
+  updatedAt     DateTime     @updatedAt      // CORRIGÉ: Suppression de @db.Timestamp(0)
 
-  order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  order         Order        @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
   @@map("payments")
 }
 
 model Product {
-  id          String    @id @default(uuid()) @db.VarChar(255)
+  id          String    @id @default(uuid()) @db.VarChar(255) // CORRIGÉ: Ajout de @default(uuid())
   name        String    @db.VarChar(255)
   description String?   @db.Text
-  price       Decimal   @db.Decimal(10, 2)
+  price       Decimal   @db.Decimal(10, 2) // CORRIGÉ: Changé de Float à Decimal
   stock       Int
   imgUrl      String?   @db.Text @map("imgUrl")
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime  @default(now()) // CORRIGÉ: Suppression de @db.Timestamp(0)
+  updatedAt   DateTime  @updatedAt      // CORRIGÉ: Suppression de @db.Timestamp(0)
   offerPrice  Decimal?  @db.Decimal(10, 2) @map("offerPrice")
-  category    String    @default("Général") @db.VarChar(255)
+  category    String    @default("Général") @db.VarChar(255) // IMPORTANT: Reste une string simple pour l'instant
 
   cartItems   CartItem[]
   orderItems  OrderItem[]
@@ -156,8 +154,8 @@ model Review {
   userId    String   @db.VarChar(255)
   rating    Int
   comment   String?  @db.Text
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) // CORRIGÉ: Suppression de @db.Timestamp(0)
+  updatedAt DateTime @updatedAt      // CORRIGÉ: Suppression de @db.Timestamp(0)
 
   product   Product  @relation(fields: [productId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
@@ -179,9 +177,9 @@ model User {
   lastName               String?   @db.VarChar(255) @map("lastName")
   role                   UserRole? @default(USER)
   resetPasswordToken     String?   @db.VarChar(255) @map("resetPasswordToken")
-  resetPasswordExpires   DateTime? @db.DateTime(0) @map("resetPasswordExpires")
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  resetPasswordExpires   DateTime? @db.DateTime(0) @map("resetPasswordExpires") // CONSERVÉ: @db.DateTime(0) car ce n'est pas @updatedAt
+  createdAt              DateTime  @default(now()) // CORRIGÉ: Suppression de @db.Timestamp(0)
+  updatedAt              DateTime  @updatedAt      // CORRIGÉ: Suppression de @db.Timestamp(0)
   phoneNumber            String?   @db.VarChar(15) @map("phoneNumber")
 
   addresses              Address[]

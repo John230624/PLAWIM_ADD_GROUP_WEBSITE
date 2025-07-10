@@ -7,11 +7,12 @@ import { useAppContext } from '@/context/AppContext';
 import { assets } from '@/assets/assets';
 import { FiShoppingCart, FiStar, FiChevronRight, FiCheck } from 'react-icons/fi';
 import { toast } from 'react-toastify';
+import { getImageUrl } from "@/lib/imageUtils"; // <-- Chemin corrigé <-- NOUVEL IMPORT
 
 const ProductCard = ({ product }) => {
   const { addToCart, formatPriceInFCFA, cartItems } = useAppContext();
   const router = useRouter();
-  const toastShownRef = useRef(false); // Empêche les toasts multiples rapides
+  const toastShownRef = useRef(false);
 
   if (!product) return null;
 
@@ -20,7 +21,10 @@ const ProductCard = ({ product }) => {
       ? product.offerPrice
       : product.price;
 
-  const imageUrl = product.imgUrl?.[0] || assets.default_product_image;
+  // --- UTILISATION DE LA FONCTION UTILITAIRE ---
+  const imageUrl = getImageUrl(product.imgUrl);
+  // --- FIN DE L'UTILISATION ---
+
   const isInCart = Boolean(cartItems[product.id]);
 
   const handleAddToCart = (e) => {

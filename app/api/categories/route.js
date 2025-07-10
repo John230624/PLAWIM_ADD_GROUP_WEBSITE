@@ -2,30 +2,30 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import prisma from '../../../lib/prisma'; // Make sure the path is correct.
+import prisma from '../../../lib/prisma'; // Assure-toi que le chemin est correct.
 
 /**
- * Handles the GET request to retrieve all categories.
- * @param {Request} req - The Next.js Request object.
+ * Gère la requête GET pour récupérer toutes les catégories.
+ * @param {Request} req - L'objet Request de Next.js.
  * @returns {Promise<NextResponse>}
  */
 export async function GET(req) {
   try {
-    // Use prisma.category.findMany to retrieve all categories
+    // Utilise prisma.category.findMany pour récupérer toutes les catégories
     const categories = await prisma.category.findMany();
     return NextResponse.json(categories, { status: 200 });
   } catch (error) {
-    console.error('Error retrieving categories:', error);
+    console.error('Erreur lors de la récupération des catégories:', error);
     return NextResponse.json(
-      { message: 'Internal server error.', error: error.message },
+      { message: 'Erreur interne du serveur.', error: error.message },
       { status: 500 }
     );
   }
 }
 
 /**
- * Handles the POST request to create a new category.
- * @param {Request} req - The Next.js Request object.
+ * Gère la requête POST pour créer une nouvelle catégorie.
+ * @param {Request} req - L'objet Request de Next.js.
  * @returns {Promise<NextResponse>}
  */
 export async function POST(req) {
@@ -34,48 +34,48 @@ export async function POST(req) {
 
     if (!name) {
       return NextResponse.json(
-        { message: 'Category name is required.' },
+        { message: 'Le nom de la catégorie est requis.' },
         { status: 400 }
       );
     }
 
-    // Check if the category already exists by name
+    // Vérifier si la catégorie existe déjà par son nom
     const existingCategory = await prisma.category.findUnique({
-      where: { name: name }, // Ensure the 'name' field is unique in your schema.prisma
+      where: { name: name }, // Assurez-vous que le champ 'name' est unique dans votre schema.prisma
     });
 
     if (existingCategory) {
       return NextResponse.json(
-        { message: 'This category already exists.' },
+        { message: 'Cette catégorie existe déjà.' },
         { status: 409 }
       );
     }
 
-    // Create the new category using prisma.category.create
+    // Crée la nouvelle catégorie en utilisant prisma.category.create
     const newCategory = await prisma.category.create({
       data: {
         name: name,
-        description: description, // Prisma handles null if the value is null/undefined
-        imageUrl: imageUrl,       // Prisma handles null if the value is null/undefined
-        // createdAt and updatedAt are automatically managed by Prisma if @default(now()) and @updatedAt are defined in the schema
+        description: description, // Prisma gère null si la valeur est null/undefined
+        imageUrl: imageUrl,       // Prisma gère null si la valeur est null/undefined
+        // createdAt et updatedAt sont gérés automatiquement par Prisma si @default(now()) et @updatedAt sont définis dans le schéma
       },
     });
 
     return NextResponse.json(
-      { message: 'Category created successfully!', categoryId: newCategory.id },
+      { message: 'Catégorie créée avec succès !', categoryId: newCategory.id },
       { status: 201 }
     );
   } catch (error) {
-    console.error('Error creating category:', error);
-    // Handle P2002 error (unique constraint violation) if the name is set as unique in the schema
+    console.error('Erreur lors de la création de la catégorie:', error);
+    // Gérer l'erreur P2002 (violation de contrainte unique) si le nom est défini comme unique dans le schéma
     if (error.code === 'P2002' && error.meta?.target?.includes('name')) {
       return NextResponse.json(
-        { message: 'A category with this name already exists.' },
-        { status: 409 } // Conflict
+        { message: 'Une catégorie avec ce nom existe déjà.' },
+        { status: 409 } // Conflit
       );
     }
     return NextResponse.json(
-      { message: 'Internal server error.', error: error.message },
+      { message: 'Erreur interne du serveur.', error: error.message },
       { status: 500 }
     );
   }

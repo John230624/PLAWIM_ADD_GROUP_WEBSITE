@@ -1,4 +1,3 @@
-// app/seller/product-list/page.jsx
 'use client';
 import React, { useEffect, useState } from "react";
 import { assets } from "@/assets/assets";
@@ -10,12 +9,17 @@ import { toast } from "react-toastify";
 import { MdDeleteForever, MdEdit } from "react-icons/md";
 import ConfirmationModal from "@/components/ConfirmationModal";
 import Link from "next/link";
+import { getImageUrl } from "@/lib/imageUtils"; // Assurez-vous que c'est bien "@/lib/imageUtils" si votre fichier est dans 'lib'
 
 const ProductList = () => {
     const { products, loadingProducts, fetchProducts, formatPriceInFCFA } = useAppContext();
 
     const [showConfirmationModal, setShowConfirmationModal] = useState(false);
     const [productIdToDelete, setProductIdToDelete] = useState(null);
+
+    useEffect(() => {
+        fetchProducts();
+    }, [fetchProducts]);
 
     const confirmDelete = (productId) => {
         setProductIdToDelete(productId);
@@ -68,7 +72,7 @@ const ProductList = () => {
                 {loadingProducts ? (
                     <Loading />
                 ) : (
-                    <div className="w-full bg-white shadow-lg rounded-xl overflow-hidden border border-gray-200"> {/* CHANGEMENT: Removed max-w-6xl mx-auto, added w-full */}
+                    <div className="w-full bg-white shadow-lg rounded-xl overflow-hidden border border-gray-200">
                         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
                             <h2 className="text-2xl font-semibold text-gray-800">Gérer Produits</h2>
                             <Link
@@ -92,26 +96,15 @@ const ProductList = () => {
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {products.length > 0 ? (
                                         products.map((product) => {
-                                            let imageUrls = [];
+                                            const mainImage = getImageUrl(product.imgUrl);
 
-                                            if (Array.isArray(product.imgUrl)) {
-                                                imageUrls = product.imgUrl;
-                                            } else if (typeof product.imgUrl === 'string') {
-                                                try {
-                                                    const parsed = JSON.parse(product.imgUrl);
-                                                    if (Array.isArray(parsed)) {
-                                                        imageUrls = parsed;
-                                                    } else {
-                                                        imageUrls = [parsed];
-                                                    }
-                                                } catch (e) {
-                                                    imageUrls = [product.imgUrl];
-                                                }
-                                            }
-
-                                            const mainImage = imageUrls.length > 0 && imageUrls[0]
-                                                ? imageUrls[0]
-                                                : assets.upload_area;
+                                            // --- LIGNES DE DÉBOGAGE À AJOUTER ---
+                                            console.log(`--- Début Débogage Produit: ${product.name} ---`);
+                                            console.log(`product.id: ${product.id}`);
+                                            console.log(`product.imgUrl (valeur brute de la BDD): `, product.imgUrl);
+                                            console.log(`mainImage (après getImageUrl): `, mainImage);
+                                            console.log(`--- Fin Débogage Produit: ${product.name} ---`);
+                                            // --- FIN DES LIGNES DE DÉBOGAGE ---
 
                                             const displayPrice = product.offerPrice && product.offerPrice < product.price
                                                 ? product.offerPrice
@@ -128,7 +121,11 @@ const ProductList = () => {
                                                                     width={64}
                                                                     height={64}
                                                                     className="h-full w-full object-contain p-1"
-                                                                    onError={(e) => { e.currentTarget.src = assets.upload_area; }}
+                                                                    onError={(e) => {
+                                                                        // Ce console.error se déclenchera si l'image ne peut pas être chargée
+                                                                        console.error(`Erreur de chargement d'image pour le produit "${product.name}" (ID: ${product.id}). URL tentée: "${mainImage}"`);
+                                                                        e.currentTarget.src = assets.upload_area; // Fallback vers l'image par défaut
+                                                                    }}
                                                                 />
                                                             </div>
                                                             <div className="ml-4">

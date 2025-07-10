@@ -1,3 +1,5 @@
+// C:\xampp\htdocs\01_PlawimAdd_Avec_Auth\app\seller\add-products\page.jsx
+
 'use client';
 import React, { useState } from "react";
 import { assets } from "@/assets/assets";
@@ -53,19 +55,35 @@ const AddProduct = () => {
           }
 
           const data = await uploadRes.json();
+          // --- LOG : Vérifie ce que l'API d'upload renvoie
+          console.log("API /api/upload-image a renvoyé:", data);
           return data.imageUrl; // /uploads/image-xxx.jpg
         })
       );
 
+      console.log("Toutes les URLs uploadées:", uploadedImageUrls);
+      const finalProductImageUrl = uploadedImageUrls.find(url => url);
+      console.log("URL de l'image finale pour le produit:", finalProductImageUrl);
+
+      if (!finalProductImageUrl) {
+        toast.error("Aucune image valide n'a pu être téléchargée. Veuillez réessayer.");
+        setLoading(false);
+        return;
+      }
+
       const productData = {
         name,
         description,
-        category,
+        category, // ou categoryId si vous stockez l'ID de la catégorie dans la BD
         price: parseFloat(price),
         offerPrice: offerPrice ? parseFloat(offerPrice) : null,
         stock: parseInt(stock),
-        imgUrl: uploadedImageUrls[0], // ✅ On utilise uniquement la première image
+        // --- LA LIGNE À CHANGER EST ICI ---
+        imageUrl: finalProductImageUrl, // <<-- Changer 'imgUrl' en 'imageUrl' pour correspondre à l'API
       };
+
+      // --- LOG : Vérifie le payload envoyé à l'API products
+      console.log("Données du produit envoyées à /api/products:", productData);
 
       const res = await fetch('/api/products', {
         method: 'POST',
